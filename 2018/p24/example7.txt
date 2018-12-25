@@ -1,0 +1,6 @@
+Immune System:  Infect wins with two left (group that cannot deal damage should not block another group from targetting)
+1 units each with 1 hit points (immune to bludgeoning) with an attack that does 1 fire damage at initiative 1
+
+Infection:
+1 units each with 1 hit points with an attack that does 1 bludgeoning damage at initiative 3
+1 units each with 1 hit points (weak to fire) with an attack that does 1 slashing damage at initiative 2

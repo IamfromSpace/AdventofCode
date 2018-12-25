@@ -1,0 +1,6 @@
+Immune System:  Immune should win with one unit left
+1 units each with 5 hit points (weak to bludgeoning) with an attack that does 1 fire damage at initiative 1
+
+Infection:
+1 units each with 1 hit points (weak to fire) with an attack that does 3 bludgeoning damage at initiative 3
+2 units each with 1 hit points with an attack that does 2 slashing damage at initiative 2
