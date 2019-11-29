@@ -24,34 +24,36 @@ aStarStep getOptions = do
         Just (((_, prevCost), ps), queue') -> do
             let nextPossible =
                     filter
-                        (\(thisPath, (_, pathCost)) ->
-                             case Map.lookup (head thisPath) seen of
+                        (\(p, _, (_, pathCost)) ->
+                             case Map.lookup p seen of
                                  Nothing -> True
                                  Just lowestCost -> pathCost < lowestCost) $
                     fmap
                         (\(p, (expectedRemaining, stepCost)) ->
-                             ( p : ps
+                             ( p
+                             , ps
                              , ( expectedRemaining <> stepCost <> prevCost
                                , stepCost <> prevCost))) $
+                    -- TODO: We can get rid of this head if we stick with the (h, t) strategy
                     getOptions $ head ps
             let (done, inProgress) =
                     partition
-                        (\(_, (totalExpectedCost, pathCost)) ->
+                        (\(_, _, (totalExpectedCost, pathCost)) ->
                              totalExpectedCost == pathCost)
                         nextPossible
             let shortestKnownPath' =
-                    case sortOn snd done of
-                        ((psNew, (_, cNew)):_) ->
+                    case sortOn (\(_, _, c) -> c) done of
+                        ((pNew, psNew, (_, cNew)):_) ->
                             case shortestKnownPath of
-                                Nothing -> Just (cNew, psNew)
+                                Nothing -> Just (cNew, pNew : psNew)
                                 Just (cOld, psOld) ->
                                     if cNew < cOld
-                                        then Just (cNew, psNew)
+                                        then Just (cNew, pNew : psNew)
                                         else Just (cOld, psOld)
                         [] -> shortestKnownPath
             let newSearchNodes =
                     filter
-                        (\(_, (totalExpectedCost, _))
+                        (\(_, _, (totalExpectedCost, _))
                                  -- This assumes that expected cost is always
                                  -- LESS than the actual cost, must be a BEST case
                           ->
@@ -62,7 +64,7 @@ aStarStep getOptions = do
                         inProgress
             let seen' =
                     Map.fromList
-                        (fmap (\(h:_, (_, c)) -> (h, c)) newSearchNodes) -- should this be nextPossible?
+                        (fmap (\(h, _, (_, c)) -> (h, c)) newSearchNodes) -- should this be nextPossible?
                     -- note that maps don't merge values with <>, they merge with const
                     -- we take advantage of this here, since we already filtered out anything
                     -- more costly than what was already there.
@@ -70,7 +72,8 @@ aStarStep getOptions = do
                     seen
             let queue'' =
                     queue' <>
-                    Set.fromList (fmap (\(ps, c) -> (c, ps)) newSearchNodes)
+                    Set.fromList
+                        (fmap (\(p, ps, c) -> (c, p : ps)) newSearchNodes)
             put (shortestKnownPath', seen', queue'')
             return Nothing
 
