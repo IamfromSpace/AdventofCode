@@ -8,6 +8,7 @@ module AdventOfCode.Util
     , labelTrace
     , manDist
     , Manhattan
+    , listToIndexMap
     ) where
 
 import Control.Monad.Loops (iterateWhile)
@@ -42,6 +43,10 @@ instance Manhattan (Integer, Integer, Integer) where
 instance Manhattan (Integer, Integer, Integer, Integer) where
     manDist (a0, a1, a2, a3) (b0, b1, b2, b3) =
         abs (b0 - a0) + abs (b1 - a1) + abs (b2 - a2) + abs (b3 - a3)
+
+listToIndexMap :: [a] -> Map Int a
+listToIndexMap =
+    fst . foldl (\(m, i) v -> (Map.insert i v m, i + 1)) (mempty, 0)
 
 aStarStep ::
        (Ord cost, Monoid cost, Ord position)
