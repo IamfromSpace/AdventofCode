@@ -8,6 +8,10 @@ module AdventOfCode.Util
     , labelTrace
     , manDist
     , Manhattan
+    , applyNTimes
+    , asCounted
+    , boundedUntilWithCount
+    , boundedUntil
     , listToIndexMap
     ) where
 
@@ -20,6 +24,32 @@ import Data.Maybe (fromJust, isNothing)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceShow)
+
+-- I just never rememeber this syntax ><
+-- Repeatedly apply a function it's result n times
+applyNTimes :: (a -> a) -> a -> Int -> a
+applyNTimes fn init n = iterate fn init !! n
+
+-- Take a function, and then have it count its iterations
+asCounted :: (a -> a) -> ((Integer, a) -> (Integer, a))
+asCounted fn (i, a) = (i + 1, fn a)
+
+-- Run a function repeatedly until a predicate is met, but throw an error if
+-- more than a specified nnumber of iterations is run.  Also, the count is returned.
+boundedUntilWithCount :: Integer -> (a -> Bool) -> (a -> a) -> a -> (Integer, a)
+boundedUntilWithCount max pred fn x =
+    if max <= 0
+        then error "Iteration bounds was set at or below 0!"
+        else let (iterations, last) =
+                     until (\(i, y) -> i >= max || pred y) (asCounted fn) (0, x)
+             in if iterations == max && not (pred last)
+                    then error "Too many iterations!"
+                    else (iterations, last)
+
+-- Run a function repeatedly until a predicate is met, but throw an error if
+-- more than a specified nnumber of iterations is run.
+boundedUntil :: Integer -> (a -> Bool) -> (a -> a) -> a -> a
+boundedUntil max pred fn = snd . boundedUntilWithCount max pred fn
 
 elmTrace :: Show a => a -> a
 elmTrace x = traceShow x x
