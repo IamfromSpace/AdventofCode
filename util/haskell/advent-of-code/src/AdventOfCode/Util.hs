@@ -5,6 +5,7 @@ module AdventOfCode.Util
     , trace
     , traceShow
     , elmTrace
+    , labelTrace
     , manDist
     , Manhattan
     ) where
@@ -21,6 +22,9 @@ import Debug.Trace (trace, traceShow)
 
 elmTrace :: Show a => a -> a
 elmTrace x = traceShow x x
+
+labelTrace :: Show a => String -> a -> a
+labelTrace label x = traceShow (label, x) x
 
 class Manhattan a where
     manDist :: a -> a -> Integer
