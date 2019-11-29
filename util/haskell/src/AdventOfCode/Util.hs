@@ -1,8 +1,12 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 module AdventOfCode.Util
     ( aStar
     , trace
     , traceShow
     , elmTrace
+    , manDist
+    , Manhattan
     ) where
 
 import Control.Monad.Loops (iterateWhile)
@@ -17,6 +21,23 @@ import Debug.Trace (trace, traceShow)
 
 elmTrace :: Show a => a -> a
 elmTrace x = traceShow x x
+
+class Manhattan a where
+    manDist :: a -> a -> Integer
+
+instance Manhattan Integer where
+    manDist a b = abs (b - a)
+
+instance Manhattan (Integer, Integer) where
+    manDist (a0, a1) (b0, b1) = abs (b0 - a0) + abs (b1 - a1)
+
+instance Manhattan (Integer, Integer, Integer) where
+    manDist (a0, a1, a2) (b0, b1, b2) =
+        abs (b0 - a0) + abs (b1 - a1) + abs (b2 - a2)
+
+instance Manhattan (Integer, Integer, Integer, Integer) where
+    manDist (a0, a1, a2, a3) (b0, b1, b2, b3) =
+        abs (b0 - a0) + abs (b1 - a1) + abs (b2 - a2) + abs (b3 - a3)
 
 aStarStep ::
        (Ord cost, Monoid cost, Ord position)
