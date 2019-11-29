@@ -89,34 +89,43 @@ aStarStep getOptions = do
     (shortestKnownPath, seen, queue) <- get
     case Set.minView queue of
         Nothing -> return $ Just shortestKnownPath -- out of explorable points
-        Just (((_, prevCost), currentPosition, history), queue') -> do
+        Just (((_, prevCost), cheapestGuessPosition, history), queue') -> do
             let nextPossible =
                     filter
-                        (\(p, _, (_, pathCost)) ->
-                             case Map.lookup p seen of
+                        (\(nextOption, _, (_, pathCost)) ->
+                             case Map.lookup nextOption seen of
                                  Nothing -> True
                                  Just lowestCost -> pathCost < lowestCost) $
                     fmap
-                        (\(p, (expectedRemaining, stepCost)) ->
-                             ( p
-                             , currentPosition : history
+                        (\(nextOption, (expectedRemaining, stepCost)) ->
+                             ( nextOption
+                             , cheapestGuessPosition : history
                              , ( expectedRemaining <> stepCost <> prevCost
                                , stepCost <> prevCost))) $
-                    getOptions currentPosition
+                    getOptions cheapestGuessPosition
             let (done, inProgress) =
                     partition
                         (\(_, _, (totalExpectedCost, pathCost)) ->
                              totalExpectedCost == pathCost)
                         nextPossible
             let shortestKnownPath' =
-                    case sortOn (\(_, _, c) -> c) done of
-                        ((pNew, psNew, (_, cNew)):_) ->
+                    case sortOn
+                             (\(_, _, expectedThenCurrentCost) ->
+                                  expectedThenCurrentCost)
+                             done of
+                        ((currentPositionNew, historyNew, (_, pathCostNew)):_) ->
                             case shortestKnownPath of
-                                Nothing -> Just (cNew, pNew : psNew)
-                                Just (cOld, psOld) ->
-                                    if cNew < cOld
-                                        then Just (cNew, pNew : psNew)
-                                        else Just (cOld, psOld)
+                                Nothing ->
+                                    Just
+                                        ( pathCostNew
+                                        , currentPositionNew : historyNew)
+                                Just (pathCostOld, pathOld) ->
+                                    if pathCostNew < pathCostOld
+                                        then Just
+                                                 ( pathCostNew
+                                                 , currentPositionNew :
+                                                   historyNew)
+                                        else Just (pathCostOld, pathOld)
                         [] -> shortestKnownPath
             let newSearchNodes =
                     filter
@@ -131,7 +140,11 @@ aStarStep getOptions = do
                         inProgress
             let seen' =
                     Map.fromList
-                        (fmap (\(h, _, (_, c)) -> (h, c)) newSearchNodes) -- should this be nextPossible?
+                        (fmap
+                             (\(currentPosition, _, (_, pathCost)) ->
+                                  (currentPosition, pathCost))
+                             newSearchNodes -- should this be nextPossible?
+                         )
                     -- note that maps don't merge values with <>, they merge with const
                     -- we take advantage of this here, since we already filtered out anything
                     -- more costly than what was already there.
@@ -140,7 +153,10 @@ aStarStep getOptions = do
             let queue'' =
                     queue' <>
                     Set.fromList
-                        (fmap (\(p, ps, c) -> (c, p, ps)) newSearchNodes)
+                        (fmap
+                             (\(currentPosition, history, pathCost) ->
+                                  (pathCost, currentPosition, history))
+                             newSearchNodes)
             put (shortestKnownPath', seen', queue'')
             return Nothing
 
