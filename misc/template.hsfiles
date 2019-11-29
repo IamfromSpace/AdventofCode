@@ -1,0 +1,178 @@
+{-# START_FILE package.yaml #-}
+name:                {{name}}
+version:             0.1.0.0
+github:              "{{github-username}}{{^github-username}}githubuser{{/github-username}}/{{name}}"
+license:             BSD3
+author:              "{{author-name}}{{^author-name}}Author name here{{/author-name}}"
+maintainer:          "{{author-email}}{{^author-email}}example@example.com{{/author-email}}"
+copyright:           "{{copyright}}{{^copyright}}{{year}}{{^year}}2019{{/year}} {{author-name}}{{^author-name}}Author name here{{/author-name}}{{/copyright}}"
+
+description:         Solution for an Advent of Code challenge
+
+dependencies:
+  - base >= 4.7 && < 5
+  - advent-of-code
+  - containers
+  - lens
+  - monad-loops
+  - mtl
+  - split
+
+default-extensions:
+  - BangPatterns
+  - BinaryLiterals
+  - DeriveFoldable
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveLift
+  - DeriveTraversable
+  - EmptyCase
+  - LambdaCase
+  - MultiParamTypeClasses
+  - OverloadedStrings
+  - OverloadedStrings
+  - ViewPatterns
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wredundant-constraints
+  - -fno-warn-partial-type-signatures
+  - -fno-warn-name-shadowing
+  - -fwarn-tabs
+  - -fwarn-unused-imports
+  - -fwarn-missing-signatures
+  - -fwarn-incomplete-patterns
+
+library:
+  source-dirs: src
+
+executables:
+  {{name}}-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - {{name}}
+
+tests:
+  {{name}}-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - {{name}}
+
+{-# START_FILE Setup.hs #-}
+import Distribution.Simple
+main = defaultMain
+
+{-# START_FILE stack.yaml #-}
+resolver: lts-14.16
+
+packages:
+- .
+
+extra-deps:
+- ../../util/haskell/advent-of-code
+
+{-# START_FILE test/Spec.hs #-}
+main :: IO ()
+main = putStrLn "Test suite not yet implemented"
+
+{-# START_FILE src/Lib.hs #-}
+module Lib
+    ( parse1
+    , parse2
+    , answer1
+    , answer2
+    ) where
+
+--import Prelude hiding (lookup)
+--import Data.Map (Map)
+--import Data.Set (Set)
+import AdventOfCode.Util ()
+import Control.Applicative ()
+import Control.Monad.State.Lazy ()
+import Data.List ()
+import Data.List.Split ()
+import Data.Maybe ()
+import Data.Monoid ()
+import Data.Sequence ()
+import qualified Data.Map as Map ()
+import qualified Data.Set as Set ()
+
+type Parsed1 = String
+
+type Parsed2 = String
+
+parse1 :: String -> Parsed1
+parse1 = id
+
+parse2 :: String -> Parsed2
+parse2 = id
+
+answer1 :: Parsed1 -> String
+answer1 = id
+
+answer2 :: Parsed2 -> String
+answer2 = id
+
+{-# START_FILE app/Main.hs #-}
+module Main where
+
+import Lib
+
+main :: IO ()
+main = do
+    contents <- getContents
+    putStrLn "part 1:"
+    putStr $ answer1 $ parse1 contents
+    putStrLn "\npart 2:"
+    putStr $ answer2 $ parse2 contents
+    putStrLn ""
+
+{-# START_FILE LICENSE #-}
+Copyright {{author-name}}{{^author-name}}Author name here{{/author-name}} (c) {{year}}{{^year}}2019{{/year}}
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided
+      with the distribution.
+
+    * Neither the name of {{author-name}}{{^author-name}}Author name here{{/author-name}} nor the names of other
+      contributors may be used to endorse or promote products derived
+      from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+{-# START_FILE .gitignore #-}
+.stack-work/
+{{name}}.cabal
+*~
