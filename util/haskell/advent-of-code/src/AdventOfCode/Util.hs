@@ -83,12 +83,13 @@ aStarStep ::
     => (position -> [(position, (cost, cost))])
     -> State ( Maybe (cost, [position])
              , Map position cost
-             , Set ((cost, cost), [position])) (Maybe (Maybe (cost, [position])))
+             , Set ((cost, cost), position, [position])) (Maybe (Maybe ( cost
+                                                                       , [position])))
 aStarStep getOptions = do
     (shortestKnownPath, seen, queue) <- get
     case Set.minView queue of
         Nothing -> return $ Just shortestKnownPath -- out of explorable points
-        Just (((_, prevCost), ps), queue') -> do
+        Just (((_, prevCost), currentPosition, history), queue') -> do
             let nextPossible =
                     filter
                         (\(p, _, (_, pathCost)) ->
@@ -98,11 +99,10 @@ aStarStep getOptions = do
                     fmap
                         (\(p, (expectedRemaining, stepCost)) ->
                              ( p
-                             , ps
+                             , currentPosition : history
                              , ( expectedRemaining <> stepCost <> prevCost
                                , stepCost <> prevCost))) $
-                    -- TODO: We can get rid of this head if we stick with the (h, t) strategy
-                    getOptions $ head ps
+                    getOptions currentPosition
             let (done, inProgress) =
                     partition
                         (\(_, _, (totalExpectedCost, pathCost)) ->
@@ -140,7 +140,7 @@ aStarStep getOptions = do
             let queue'' =
                     queue' <>
                     Set.fromList
-                        (fmap (\(p, ps, c) -> (c, p : ps)) newSearchNodes)
+                        (fmap (\(p, ps, c) -> (c, p, ps)) newSearchNodes)
             put (shortestKnownPath', seen', queue'')
             return Nothing
 
@@ -153,4 +153,4 @@ aStar getOptions pInit =
     fromJust $
     evalState
         (iterateWhile isNothing (aStarStep getOptions))
-        (Nothing, mempty, Set.singleton (mempty, [pInit]))
+        (Nothing, mempty, Set.singleton (mempty, pInit, []))
