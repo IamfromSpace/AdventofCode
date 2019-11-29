@@ -1,5 +1,8 @@
 module AdventOfCode.Util
     ( aStar
+    , trace
+    , traceShow
+    , elmTrace
     ) where
 
 import Control.Monad.Loops (iterateWhile)
@@ -10,6 +13,10 @@ import qualified Data.Map as Map
 import Data.Maybe (fromJust, isNothing)
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Debug.Trace (trace, traceShow)
+
+elmTrace :: Show a => a -> a
+elmTrace x = traceShow x x
 
 aStarStep ::
        (Ord cost, Monoid cost, Ord position)
