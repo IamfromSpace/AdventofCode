@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module AdventOfCode.Util
     ( aStar
+    , AStarStepOption(..)
     , trace
     , traceShow
     , elmTrace
@@ -78,9 +80,15 @@ listToIndexMap :: [a] -> Map Int a
 listToIndexMap =
     fst . foldl (\(m, i) v -> (Map.insert i v m, i + 1)) (mempty, 0)
 
+data AStarStepOption a b = AStarStepOption
+    { position :: a
+    , stepCost :: b
+    , minimumRemainingCost :: b
+    }
+
 aStarStep ::
        (Ord cost, Monoid cost, Ord position)
-    => (position -> [(position, (cost, cost))])
+    => (position -> [AStarStepOption position cost])
     -> State ( Maybe (cost, [position])
              , Map position cost
              , Set ((cost, cost), position, [position])) (Maybe (Maybe ( cost
@@ -97,10 +105,13 @@ aStarStep getOptions = do
                                  Nothing -> True
                                  Just lowestCost -> pathCost < lowestCost) $
                     fmap
-                        (\(nextOption, (expectedRemaining, stepCost)) ->
-                             ( nextOption
+                        (\(AStarStepOption { position
+                                           , stepCost
+                                           , minimumRemainingCost
+                                           }) ->
+                             ( position
                              , cheapestGuessPosition : history
-                             , ( expectedRemaining <> stepCost <> prevCost
+                             , ( minimumRemainingCost <> stepCost <> prevCost
                                , stepCost <> prevCost))) $
                     getOptions cheapestGuessPosition
             let (done, inProgress) =
@@ -162,7 +173,7 @@ aStarStep getOptions = do
 
 aStar ::
        (Ord cost, Ord position, Monoid cost)
-    => (position -> [(position, (cost, cost))])
+    => (position -> [AStarStepOption position cost])
     -> position
     -> Maybe (cost, [position])
 aStar getOptions pInit =
