@@ -29,6 +29,7 @@ default-extensions:
   - EmptyCase
   - LambdaCase
   - MultiParamTypeClasses
+  - NamedFieldPuns
   - OverloadedStrings
   - OverloadedStrings
   - ViewPatterns
