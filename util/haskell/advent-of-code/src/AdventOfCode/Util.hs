@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
@@ -122,18 +123,22 @@ instance Semigroup (BoundingBox Integer) where
     a <> b =
         let BoundingBox {point = pa, vector = Vector va} = a
             BoundingBox {point = pb, vector = Vector vb} = b
+            p = min pa pb
         in BoundingBox
-           {point = min pa pb, vector = Vector $ max (pa + va) (pb + vb)}
+           {point = p, vector = Vector $ max (pa + va) (pb + vb) - p}
 
 instance Semigroup (BoundingBox (Integer, Integer)) where
     a <> b =
         let BoundingBox {point = (pa0, pa1), vector = Vector (va0, va1)} = a
             BoundingBox {point = (pb0, pb1), vector = Vector (vb0, vb1)} = b
+            p0 = min pa0 pb0
+            p1 = min pa1 pb1
         in BoundingBox
-           { point = (min pa0 pb0, min pa1 pb1)
+           { point = (p0, p1)
            , vector =
                  Vector
-                     (max (pa0 + va0) (pb0 + vb0), max (pa1 + va1) (pb1 + vb1))
+                     ( max (pa0 + va0) (pb0 + vb0) - p0
+                     , max (pa1 + va1) (pb1 + vb1) - p1)
            }
 
 instance Semigroup (BoundingBox (Integer, Integer, Integer)) where
@@ -144,13 +149,16 @@ instance Semigroup (BoundingBox (Integer, Integer, Integer)) where
             BoundingBox { point = (pb0, pb1, pb2)
                         , vector = Vector (vb0, vb1, vb2)
                         } = b
+            p0 = min pa0 pb0
+            p1 = min pa1 pb1
+            p2 = min pa2 pb2
         in BoundingBox
-           { point = (min pa0 pb0, min pa1 pb1, min pa2 pb2)
+           { point = (p0, p1, p2)
            , vector =
                  Vector
-                     ( max (pa0 + va0) (pb0 + vb0)
-                     , max (pa1 + va1) (pb1 + vb1)
-                     , max (pa2 + va2) (pb2 + vb2))
+                     ( max (pa0 + va0) (pb0 + vb0) - p0
+                     , max (pa1 + va1) (pb1 + vb1) - p1
+                     , max (pa2 + va2) (pb2 + vb2) - p2)
            }
 
 instance Semigroup (BoundingBox (Integer, Integer, Integer, Integer)) where
@@ -161,14 +169,18 @@ instance Semigroup (BoundingBox (Integer, Integer, Integer, Integer)) where
             BoundingBox { point = (pb0, pb1, pb2, pb3)
                         , vector = Vector (vb0, vb1, vb2, vb3)
                         } = b
+            p0 = min pa0 pb0
+            p1 = min pa1 pb1
+            p2 = min pa2 pb2
+            p3 = min pa3 pb3
         in BoundingBox
-           { point = (min pa0 pb0, min pa1 pb1, min pa2 pb2, min pa3 pb3)
+           { point = (p0, p1, p2, p3)
            , vector =
                  Vector
-                     ( max (pa0 + va0) (pb0 + vb0)
-                     , max (pa1 + va1) (pb1 + vb1)
-                     , max (pa2 + va2) (pb2 + vb2)
-                     , max (pa3 + va3) (pb3 + vb3))
+                     ( max (pa0 + va0) (pb0 + vb0) - p0
+                     , max (pa1 + va1) (pb1 + vb1) - p1
+                     , max (pa2 + va2) (pb2 + vb2) - p2
+                     , max (pa3 + va3) (pb3 + vb3) - p3)
            }
 
 class IsBoundedBy a where
