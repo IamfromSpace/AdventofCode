@@ -224,7 +224,7 @@ instance HasArea (BoundingBox (Integer, Integer, Integer, Integer)) where
 -- I just never rememeber this syntax ><
 -- Repeatedly apply a function it's result n times
 applyNTimes :: (a -> a) -> a -> Integer -> a
-applyNTimes fn init n = iterate fn init !! (fromIntegral n)
+applyNTimes fn init n = iterate fn init !! fromIntegral n
 
 -- Take a function, and then have it count its iterations
 asCounted :: (a -> a) -> ((Integer, a) -> (Integer, a))
@@ -333,10 +333,10 @@ aStarStep getOptions = do
                                  Nothing -> True
                                  Just lowestCost -> pathCost < lowestCost) $
                     fmap
-                        (\(AStarStepOption { position
-                                           , stepCost
-                                           , minimumRemainingCost
-                                           }) ->
+                        (\AStarStepOption { position
+                                          , stepCost
+                                          , minimumRemainingCost
+                                          } ->
                              ( position
                              , cheapestGuessPosition : history
                              , ( minimumRemainingCost <> stepCost <> prevCost

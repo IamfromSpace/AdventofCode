@@ -1,0 +1,6 @@
+- ignore: {name: Use ***}
+- ignore: {name: Use guards}
+- ignore: {name: Use <$>}
+- ignore: {name: Use list comprehension}
+- ignore: {name: Avoid lambda}
+- ignore: {name: Use section}
