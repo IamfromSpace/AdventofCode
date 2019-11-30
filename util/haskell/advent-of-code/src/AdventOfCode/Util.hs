@@ -15,6 +15,12 @@ module AdventOfCode.Util
     , boundedUntilWithCount
     , boundedUntil
     , listToIndexMap
+    , Vector(..)
+    , intoVector
+    , BoundingBox(..)
+    , intoBoundingBox
+    , isBoundedBy
+    , area
     ) where
 
 import Control.Monad.Loops (iterateWhile)
@@ -26,6 +32,175 @@ import Data.Maybe (fromJust, isNothing)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceShow)
+
+newtype Vector a = Vector
+    { getVector :: a
+    } deriving (Show, Ord, Eq)
+
+instance Semigroup (Vector Integer) where
+    Vector a <> Vector b = Vector (a + b)
+
+instance Monoid (Vector Integer) where
+    mempty = Vector 0
+
+instance Semigroup (Vector (Integer, Integer)) where
+    Vector (a0, a1) <> Vector (b0, b1) = Vector (a0 + b0, a1 + b1)
+
+instance Monoid (Vector (Integer, Integer)) where
+    mempty = Vector (0, 0)
+
+instance Semigroup (Vector (Integer, Integer, Integer)) where
+    Vector (a0, a1, a2) <> Vector (b0, b1, b2) =
+        Vector (a0 + b0, a1 + b1, a2 + b2)
+
+instance Monoid (Vector (Integer, Integer, Integer)) where
+    mempty = Vector (0, 0, 0)
+
+instance Semigroup (Vector (Integer, Integer, Integer, Integer)) where
+    Vector (a0, a1, a2, a3) <> Vector (b0, b1, b2, b3) =
+        Vector (a0 + b0, a1 + b1, a2 + b2, a3 + b3)
+
+instance Monoid (Vector (Integer, Integer, Integer, Integer)) where
+    mempty = Vector (0, 0, 0, 0)
+
+class IntoVector a where
+    intoVector :: a -> a -> Vector a
+
+instance IntoVector Integer where
+    intoVector a b = Vector (b - a)
+
+instance IntoVector (Integer, Integer) where
+    (a0, a1) `intoVector` (b0, b1) = Vector (b0 - a0, b1 - a1)
+
+instance IntoVector (Integer, Integer, Integer) where
+    (a0, a1, a2) `intoVector` (b0, b1, b2) = Vector (b0 - a0, b1 - a1, b2 - a2)
+
+instance IntoVector (Integer, Integer, Integer, Integer) where
+    (a0, a1, a2, a3) `intoVector` (b0, b1, b2, b3) =
+        Vector (b0 - a0, b1 - a1, b2 - a2, b3 - a3)
+
+data BoundingBox a = BoundingBox
+    { point :: a
+    , vector :: Vector a
+    } deriving (Show, Ord, Eq)
+
+class IntoBoundingBox a where
+    intoBoundingBox :: a -> BoundingBox a
+
+instance IntoBoundingBox Integer where
+    intoBoundingBox p = BoundingBox {point = p, vector = mempty}
+
+instance IntoBoundingBox (Integer, Integer) where
+    intoBoundingBox p = BoundingBox {point = p, vector = mempty}
+
+instance IntoBoundingBox (Integer, Integer, Integer) where
+    intoBoundingBox p = BoundingBox {point = p, vector = mempty}
+
+instance IntoBoundingBox (Integer, Integer, Integer, Integer) where
+    intoBoundingBox p = BoundingBox {point = p, vector = mempty}
+
+instance Semigroup (BoundingBox Integer) where
+    a <> b =
+        let BoundingBox {point = pa, vector = Vector va} = a
+            BoundingBox {point = pb, vector = Vector vb} = b
+        in BoundingBox
+           {point = min pa pb, vector = Vector $ max (pa + va) (pb + vb)}
+
+instance Semigroup (BoundingBox (Integer, Integer)) where
+    a <> b =
+        let BoundingBox {point = (pa0, pa1), vector = Vector (va0, va1)} = a
+            BoundingBox {point = (pb0, pb1), vector = Vector (vb0, vb1)} = b
+        in BoundingBox
+           { point = (min pa0 pb0, min pa1 pb1)
+           , vector =
+                 Vector
+                     (max (pa0 + va0) (pb0 + vb0), max (pa1 + va1) (pb1 + vb1))
+           }
+
+instance Semigroup (BoundingBox (Integer, Integer, Integer)) where
+    a <> b =
+        let BoundingBox { point = (pa0, pa1, pa2)
+                        , vector = Vector (va0, va1, va2)
+                        } = a
+            BoundingBox { point = (pb0, pb1, pb2)
+                        , vector = Vector (vb0, vb1, vb2)
+                        } = b
+        in BoundingBox
+           { point = (min pa0 pb0, min pa1 pb1, min pa2 pb2)
+           , vector =
+                 Vector
+                     ( max (pa0 + va0) (pb0 + vb0)
+                     , max (pa1 + va1) (pb1 + vb1)
+                     , max (pa2 + va2) (pb2 + vb2))
+           }
+
+instance Semigroup (BoundingBox (Integer, Integer, Integer, Integer)) where
+    a <> b =
+        let BoundingBox { point = (pa0, pa1, pa2, pa3)
+                        , vector = Vector (va0, va1, va2, va3)
+                        } = a
+            BoundingBox { point = (pb0, pb1, pb2, pb3)
+                        , vector = Vector (vb0, vb1, vb2, vb3)
+                        } = b
+        in BoundingBox
+           { point = (min pa0 pb0, min pa1 pb1, min pa2 pb2, min pa3 pb3)
+           , vector =
+                 Vector
+                     ( max (pa0 + va0) (pb0 + vb0)
+                     , max (pa1 + va1) (pb1 + vb1)
+                     , max (pa2 + va2) (pb2 + vb2)
+                     , max (pa3 + va3) (pb3 + vb3))
+           }
+
+class IsBoundedBy a where
+    isBoundedBy :: a -> BoundingBox a -> Bool
+
+instance IsBoundedBy Integer where
+    isBoundedBy p bb =
+        let BoundingBox {point = bbp, vector = Vector v} = bb
+        in p >= bbp && p <= bbp + v
+
+instance IsBoundedBy (Integer, Integer) where
+    isBoundedBy (p0, p1) bb =
+        let BoundingBox {point = (bbp0, bbp1), vector = Vector (v0, v1)} = bb
+        in p0 >= bbp0 && p1 >= bbp1 && p0 <= (bbp0 + v0) && p1 <= (bbp1 + v1)
+
+instance IsBoundedBy (Integer, Integer, Integer) where
+    isBoundedBy (p0, p1, p2) bb =
+        let BoundingBox { point = (bbp0, bbp1, bbp2)
+                        , vector = Vector (v0, v1, v2)
+                        } = bb
+        in p0 >= bbp0 &&
+           p1 >= bbp1 &&
+           p2 >= bbp2 &&
+           p0 <= (bbp0 + v0) && p1 <= (bbp1 + v1) && p2 <= (bbp2 + v2)
+
+instance IsBoundedBy (Integer, Integer, Integer, Integer) where
+    isBoundedBy (p0, p1, p2, p3) bb =
+        let BoundingBox { point = (bbp0, bbp1, bbp2, bbp3)
+                        , vector = Vector (v0, v1, v2, v3)
+                        } = bb
+        in p0 >= bbp0 &&
+           p1 >= bbp1 &&
+           p2 >= bbp2 &&
+           p3 >= bbp3 &&
+           p0 <= (bbp0 + v0) &&
+           p1 <= (bbp1 + v1) && p2 <= (bbp2 + v2) && p3 <= (bbp3 + v3)
+
+class HasArea a where
+    area :: a -> Integer
+
+instance HasArea (BoundingBox Integer) where
+    area BoundingBox {vector = Vector v} = v
+
+instance HasArea (BoundingBox (Integer, Integer)) where
+    area BoundingBox {vector = Vector (v0, v1)} = v0 * v1
+
+instance HasArea (BoundingBox (Integer, Integer, Integer)) where
+    area BoundingBox {vector = Vector (v0, v1, v2)} = v0 * v1 * v2
+
+instance HasArea (BoundingBox (Integer, Integer, Integer, Integer)) where
+    area BoundingBox {vector = Vector (v0, v1, v2, v3)} = v0 * v1 * v2 * v3
 
 -- I just never rememeber this syntax ><
 -- Repeatedly apply a function it's result n times
