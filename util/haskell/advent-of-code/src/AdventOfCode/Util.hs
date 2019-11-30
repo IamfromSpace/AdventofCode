@@ -16,6 +16,7 @@ module AdventOfCode.Util
     , boundedUntil
     , listToIndexMap
     , Vector(..)
+    , manLen
     , intoVector
     , BoundingBox(..)
     , intoBoundingBox
@@ -64,6 +65,21 @@ instance Semigroup (Vector (Integer, Integer, Integer, Integer)) where
 
 instance Monoid (Vector (Integer, Integer, Integer, Integer)) where
     mempty = Vector (0, 0, 0, 0)
+
+class ManhattanLength a where
+    manLen :: a -> Integer
+
+instance ManhattanLength (Vector Integer) where
+    manLen (Vector x) = abs x
+
+instance ManhattanLength (Vector (Integer, Integer)) where
+    manLen (Vector (x, y)) = abs x + abs y
+
+instance ManhattanLength (Vector (Integer, Integer, Integer)) where
+    manLen (Vector (x, y, z)) = abs x + abs y + abs z
+
+instance ManhattanLength (Vector (Integer, Integer, Integer, Integer)) where
+    manLen (Vector (x, y, z, t)) = abs x + abs y + abs z + abs t
 
 class IntoVector a where
     intoVector :: a -> a -> Vector a
@@ -240,18 +256,16 @@ class Manhattan a where
     manDist :: a -> a -> Integer
 
 instance Manhattan Integer where
-    manDist a b = abs (b - a)
+    manDist a b = manLen (intoVector a b)
 
 instance Manhattan (Integer, Integer) where
-    manDist (a0, a1) (b0, b1) = abs (b0 - a0) + abs (b1 - a1)
+    manDist a b = manLen (intoVector a b)
 
 instance Manhattan (Integer, Integer, Integer) where
-    manDist (a0, a1, a2) (b0, b1, b2) =
-        abs (b0 - a0) + abs (b1 - a1) + abs (b2 - a2)
+    manDist a b = manLen (intoVector a b)
 
 instance Manhattan (Integer, Integer, Integer, Integer) where
-    manDist (a0, a1, a2, a3) (b0, b1, b2, b3) =
-        abs (b0 - a0) + abs (b1 - a1) + abs (b2 - a2) + abs (b3 - a3)
+    manDist a b = manLen (intoVector a b)
 
 listToIndexMap :: [a] -> Map Int a
 listToIndexMap =
