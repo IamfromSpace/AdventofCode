@@ -15,6 +15,8 @@ module AdventOfCode.Util
     , asCounted
     , boundedUntilWithCount
     , boundedUntil
+    , findCyclePeriod
+    , findCycle
     , listToIndexMap
     , Vector(..)
     , manLen
@@ -25,8 +27,6 @@ module AdventOfCode.Util
     , area
     ) where
 
---TODO: Tortise and hair cycle dectection
---TODO: Repetition detection
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.List (partition, sortOn)
@@ -223,8 +223,8 @@ instance HasArea (BoundingBox (Integer, Integer, Integer, Integer)) where
 
 -- I just never rememeber this syntax ><
 -- Repeatedly apply a function it's result n times
-applyNTimes :: (a -> a) -> a -> Int -> a
-applyNTimes fn init n = iterate fn init !! n
+applyNTimes :: (a -> a) -> a -> Integer -> a
+applyNTimes fn init n = iterate fn init !! (fromIntegral n)
 
 -- Take a function, and then have it count its iterations
 asCounted :: (a -> a) -> ((Integer, a) -> (Integer, a))
@@ -246,6 +246,29 @@ boundedUntilWithCount max pred fn x =
 -- more than a specified nnumber of iterations is run.
 boundedUntil :: Integer -> (a -> Bool) -> (a -> a) -> a -> a
 boundedUntil max pred fn = snd . boundedUntilWithCount max pred fn
+
+-- Find the period of a cycle (Brent's Algorithm pt1)
+findCyclePeriod :: Eq a => (a -> a) -> a -> Integer
+findCyclePeriod fn init = go 1 1 (fn init) fn init
+  where
+    go !pow !guess !hare !fn !tort =
+        if tort == hare
+            then guess
+            else if pow == guess
+                     then go (pow * 2) 1 (fn hare) fn hare
+                     else go pow (guess + 1) (fn hare) fn tort
+
+-- Find the start, period, first value of a cycle (Brent's Algorithm pt1/2)
+findCycle :: Eq a => (a -> a) -> a -> (Integer, Integer, a)
+findCycle fn init =
+    let period = findCyclePeriod fn init
+        hare = applyNTimes fn init period
+        (firstIndex, (firstValue, _)) =
+            until
+                (uncurry (==) . snd)
+                (asCounted (\(a, b) -> (fn a, fn b)))
+                (0, (init, hare))
+    in (firstIndex, period, firstValue)
 
 elmTrace :: Show a => a -> a
 elmTrace x = traceShow x x
