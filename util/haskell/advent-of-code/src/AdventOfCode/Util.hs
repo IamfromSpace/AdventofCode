@@ -23,6 +23,8 @@ module AdventOfCode.Util
     , area
     ) where
 
+--TODO: Tortise and hair cycle dectection
+--TODO: Repetition detection
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.List (partition, sortOn)
