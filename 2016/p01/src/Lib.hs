@@ -63,6 +63,7 @@ totalVector =
 vLength :: Vector (Integer, Integer) -> Integer
 vLength (Vector (a, b)) = abs a + abs b
 
+-- Unofficial time: 27:09.34
 answer1 :: Parsed1 -> String
 answer1 = show . vLength . totalVector
 
@@ -105,5 +106,6 @@ findReVisit seen position heading (next:t) =
                    newHeading
                    t
 
+-- Unofficial time: 56:08.27
 answer2 :: Parsed2 -> String
 answer2 = show . findReVisit mempty mempty North
