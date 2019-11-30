@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
@@ -31,7 +32,7 @@ import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.List (partition, sortOn)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe (fromJust, isNothing)
+import Data.Maybe (fromJust, fromMaybe, isNothing)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceShow)
@@ -271,6 +272,19 @@ listToIndexMap :: [a] -> Map Int a
 listToIndexMap =
     fst . foldl (\(m, i) v -> (Map.insert i v m, i + 1)) (mempty, 0)
 
+mMaybeinimumBy :: Ord b => (a -> b) -> [a] -> Maybe a
+mMaybeinimumBy _ [] = Nothing
+mMaybeinimumBy fn (h:t) = mMaybeinimumBy' h fn t
+  where
+    mMaybeinimumBy' :: Ord b => a -> (a -> b) -> [a] -> Maybe a
+    mMaybeinimumBy' !result _ [] = Just result
+    mMaybeinimumBy' !result !fn (h:t) =
+        let newResult =
+                if fn h < fn result
+                    then h
+                    else result
+        in mMaybeinimumBy' newResult fn t
+
 data AStarStepOption a b = AStarStepOption
     { position :: a
     , stepCost :: b
@@ -311,11 +325,11 @@ aStarStep getOptions = do
                              totalExpectedCost == pathCost)
                         nextPossible
             let shortestKnownPath' =
-                    case sortOn
+                    case mMaybeinimumBy
                              (\(_, _, expectedThenCurrentCost) ->
                                   expectedThenCurrentCost)
                              done of
-                        ((currentPositionNew, historyNew, (_, pathCostNew)):_) ->
+                        Just (currentPositionNew, historyNew, (_, pathCostNew)) ->
                             case shortestKnownPath of
                                 Nothing ->
                                     Just
@@ -328,7 +342,7 @@ aStarStep getOptions = do
                                                  , currentPositionNew :
                                                    historyNew)
                                         else Just (pathCostOld, pathOld)
-                        [] -> shortestKnownPath
+                        Nothing -> shortestKnownPath
             let newSearchNodes =
                     filter
                         (\(_, _, (totalExpectedCost, _))
