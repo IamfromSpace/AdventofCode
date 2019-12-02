@@ -124,7 +124,7 @@ parse1 :: String -> _
 parse1 = id
 
 parse2 :: String -> _
-parse2 = id
+parse2 = parse1
 
 answer1 :: _ -> _
 answer1 = id
