@@ -32,6 +32,7 @@ default-extensions:
   - NamedFieldPuns
   - OverloadedStrings
   - OverloadedStrings
+  - PartialTypeSignatures
   - ViewPatterns
 
 ghc-options:
@@ -111,20 +112,16 @@ import Data.Sequence ()
 import qualified Data.Map as Map ()
 import qualified Data.Set as Set ()
 
-type Parsed1 = String
-
-type Parsed2 = String
-
-parse1 :: String -> Parsed1
+parse1 :: String -> _
 parse1 = id
 
-parse2 :: String -> Parsed2
+parse2 :: String -> _
 parse2 = id
 
-answer1 :: Parsed1 -> String
+answer1 :: _ -> _
 answer1 = id
 
-answer2 :: Parsed2 -> String
+answer2 :: _ -> _
 answer2 = id
 
 {-# START_FILE app/Main.hs #-}
@@ -144,10 +141,10 @@ main = do
     let pt2 = member "--pt2" args || null args
     when pt1 $ do
         putStrLn "part 1:"
-        putStr $ answer1 $ parse1 contents
+        putStr $ show $ answer1 $ parse1 contents
     when pt2 $ do
         putStrLn "\npart 2:"
-        putStr $ answer2 $ parse2 contents
+        putStr $ show $ answer2 $ parse2 contents
     putStrLn ""
 
 {-# START_FILE LICENSE #-}
