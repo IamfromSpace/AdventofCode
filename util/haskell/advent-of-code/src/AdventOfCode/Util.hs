@@ -12,6 +12,7 @@ module AdventOfCode.Util
     , labelTrace
     , manDist
     , Manhattan
+    , byteStringToHex
     , applyNTimes
     , asCounted
     , boundedUntilWithCount
@@ -30,6 +31,7 @@ module AdventOfCode.Util
 
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
+import Data.ByteString (ByteString, unpack)
 import Data.List (partition, sortOn)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -37,6 +39,7 @@ import Data.Maybe (fromJust, fromMaybe, isNothing)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceShow)
+import GHC.Word (Word8)
 
 newtype Vector a = Vector
     { getVector :: a
@@ -232,6 +235,34 @@ instance HasArea (BoundingBox (Integer, Integer, Integer)) where
 
 instance HasArea (BoundingBox (Integer, Integer, Integer, Integer)) where
     area BoundingBox {vector = Vector (v0, v1, v2, v3)} = v0 * v1 * v2 * v3
+
+word4in8ToHex :: Word8 -> Char
+word4in8ToHex 0 = '0'
+word4in8ToHex 1 = '1'
+word4in8ToHex 2 = '2'
+word4in8ToHex 3 = '3'
+word4in8ToHex 4 = '4'
+word4in8ToHex 5 = '5'
+word4in8ToHex 6 = '6'
+word4in8ToHex 7 = '7'
+word4in8ToHex 8 = '8'
+word4in8ToHex 9 = '9'
+word4in8ToHex 10 = 'a'
+word4in8ToHex 11 = 'b'
+word4in8ToHex 12 = 'c'
+word4in8ToHex 13 = 'd'
+word4in8ToHex 14 = 'e'
+word4in8ToHex 15 = 'f'
+word4in8ToHex _ = error "Tried to convert value too large to hex!"
+
+word8ToHex :: Word8 -> String
+word8ToHex x =
+    let top = x `quot` 16
+        bottom = x - top
+    in [word4in8ToHex top, word4in8ToHex bottom]
+
+byteStringToHex :: ByteString -> String
+byteStringToHex = concatMap word8ToHex . unpack
 
 -- I just never rememeber this syntax ><
 -- Repeatedly apply a function it's result n times
