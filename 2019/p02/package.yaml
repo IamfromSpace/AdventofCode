@@ -1,0 +1,77 @@
+name:                p02
+version:             0.1.0.0
+github:              "githubuser/p02"
+license:             BSD3
+author:              "Author name here"
+maintainer:          "example@example.com"
+copyright:           "2019 Author name here"
+
+description:         Solution for an Advent of Code challenge
+
+dependencies:
+  - base >= 4.7 && < 5
+  - advent-of-code
+  - bytestring
+  - containers
+  - cryptohash-md5
+  - lens
+  - monad-loops
+  - mtl
+  - split
+  - text
+  - utf8-string
+
+default-extensions:
+  - BangPatterns
+  - BinaryLiterals
+  - DeriveFoldable
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveLift
+  - DeriveTraversable
+  - EmptyCase
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  - OverloadedStrings
+  - OverloadedStrings
+  - PartialTypeSignatures
+  - ViewPatterns
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wredundant-constraints
+  - -fno-warn-partial-type-signatures
+  - -fno-warn-name-shadowing
+  - -fwarn-tabs
+  - -fwarn-unused-imports
+  - -fwarn-missing-signatures
+  - -fwarn-incomplete-patterns
+
+library:
+  source-dirs: src
+
+executables:
+  p02-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - p02
+
+tests:
+  p02-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - p02
