@@ -12,11 +12,15 @@ description:         Solution for an Advent of Code challenge
 dependencies:
   - base >= 4.7 && < 5
   - advent-of-code
+  - bytestring
   - containers
+  - cryptohash-md5
   - lens
   - monad-loops
   - mtl
   - split
+  - text
+  - utf8-string
 
 default-extensions:
   - BangPatterns
@@ -99,11 +103,15 @@ module Lib
     ) where
 
 --import Prelude hiding (lookup)
+--import Data.ByteString (ByteString)
 --import Data.Map (Map)
 --import Data.Set (Set)
 import AdventOfCode.Util ()
 import Control.Applicative ()
 import Control.Monad.State.Lazy ()
+import Crypto.Hash.MD5 ()
+import qualified Data.ByteString as BS ()
+import Data.ByteString.UTF8 ()
 import Data.List ()
 import Data.List.Split ()
 import Data.Maybe ()
