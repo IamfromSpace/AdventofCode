@@ -46,18 +46,23 @@ countOrbits t m s =
 answer1 :: _ -> _
 answer1 m = sum $ fmap (countOrbits "COM" m) $ Map.keys m
 
-children' :: Map String String -> String -> [String]
-children' m s =
+children :: Map String String -> String -> [String]
+children m s =
     case Map.lookup s m of
         Just "COM" -> ["COM"]
-        Just p -> p : children' m p
+        Just p -> p : children m p
 
-children :: Map String String -> String -> Set String
-children m s = Set.fromList $ children' m s
+dropWhileEq :: Eq a => ([a], [a]) -> ([a], [a])
+dropWhileEq x@([], _) = x
+dropWhileEq x@(_, []) = x
+dropWhileEq x@(h1:t1, h2:t2) =
+    if h1 /= h2
+        then x
+        else dropWhileEq (t1, t2)
 
+-- Note!  This answer is simplified from its original to be O(n), was O(nlogn)
 answer2 :: _ -> _
 answer2 m =
-    let sharedChildren = children m "YOU" `Set.intersection` children m "SAN"
-    in minimum $
-       fmap (\c -> (countOrbits c m "YOU" + countOrbits c m "SAN" - 2, c)) $
-       Set.toList sharedChildren
+    let (a, b) =
+            dropWhileEq (reverse $ children m "YOU", reverse $ children m "SAN")
+    in length a + length b
