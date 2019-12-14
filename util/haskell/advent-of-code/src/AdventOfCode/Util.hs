@@ -12,6 +12,8 @@ module AdventOfCode.Util
     , labelTrace
     , manDist
     , Manhattan
+    , prettyPrintPointMap
+    , prettyPrintPointSet
     , byteStringToHex
     , applyNTimes
     , asCounted
@@ -29,10 +31,12 @@ module AdventOfCode.Util
     , area
     ) where
 
+import Control.Applicative (liftA2)
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.ByteString (ByteString, unpack)
 import Data.List (partition, sortOn)
+import Data.List.Split (chunksOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isNothing)
@@ -235,6 +239,22 @@ instance HasArea (BoundingBox (Integer, Integer, Integer)) where
 
 instance HasArea (BoundingBox (Integer, Integer, Integer, Integer)) where
     area BoundingBox {vector = Vector (v0, v1, v2, v3)} = v0 * v1 * v2 * v3
+
+prettyPrintPointMap ::
+       Integral b => Char -> (a -> Char) -> Map (b, b) a -> String
+prettyPrintPointMap d fn m =
+    let (xs, ys) = unzip $ Map.keys m
+        (minX, minY) = (minimum xs, minimum ys)
+        (maxX, maxY) = (maximum xs, maximum ys)
+    in unlines $
+       chunksOf (fromIntegral maxX - fromIntegral minX + 1) $
+       fmap (\(y, x) -> fromMaybe d $ fn <$> Map.lookup (x, y) m) $
+       liftA2 (,) (reverse [minY .. maxY]) [minX .. maxX]
+
+prettyPrintPointSet :: Integral b => Char -> Char -> Set (b, b) -> String
+prettyPrintPointSet notPresent present =
+    prettyPrintPointMap notPresent (const present) .
+    Map.fromList . fmap (\x -> (x, ())) . Set.toList
 
 word4in8ToHex :: Word8 -> Char
 word4in8ToHex 0 = '0'

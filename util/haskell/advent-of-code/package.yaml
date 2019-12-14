@@ -25,6 +25,7 @@ library:
   source-dirs: src
   dependencies:
   - bytestring
+  - split
   - containers
   - monad-loops
   - mtl

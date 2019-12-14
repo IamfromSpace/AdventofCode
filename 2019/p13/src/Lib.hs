@@ -10,7 +10,8 @@ module Lib
 --import Data.ByteString (ByteString)
 import Data.Map (Map)
 
-import AdventOfCode.Util (applyNTimes, elmTrace)
+import AdventOfCode.Util
+       (applyNTimes, elmTrace, prettyPrintPointMap)
 import Control.Applicative ((<*>), liftA2)
 import Control.Monad (replicateM)
 import Control.Monad.Loops (unfoldWhileM)
@@ -196,24 +197,16 @@ data Tile
     | Ball
     deriving (Show, Eq, Ord)
 
+tileToChar :: Tile -> Char
+tileToChar Block = 'X'
+tileToChar Horizontal = '_'
+tileToChar Wall = '#'
+tileToChar Ball = '0'
+
+-- Note:  This function was original written during the solve,
+-- it became prettyPrintPointMap.
 render :: (Integer, Map (Integer, Integer) Tile) -> String
-render (score, m) =
-    let xs = fmap (fst . fst) $ Map.toList m
-        ys = fmap (snd . fst) $ Map.toList m
-        (minX, minY) = (minimum xs, minimum ys)
-        (maxX, maxY) = (maximum xs, maximum ys)
-    in (++) (show score ++ "\n") $
-       unlines $
-       chunksOf (fromIntegral maxX - fromIntegral minX + 1) $
-       fmap
-           (\(y, x) ->
-                case Map.lookup (x, y) m of
-                    Nothing -> ' '
-                    Just Block -> 'X'
-                    Just Horizontal -> '_'
-                    Just Wall -> '#'
-                    Just Ball -> '0') $
-       liftA2 (,) (reverse [minY .. maxY]) [minX .. maxX]
+render (score, m) = show score ++ "\n" ++ prettyPrintPointMap ' ' tileToChar m
 
 display' ::
        (Integer, Map (Integer, Integer) Tile)
