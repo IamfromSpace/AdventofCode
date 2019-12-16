@@ -4,6 +4,7 @@ module AdventOfCode.IntCode
     , consume
     , WaitState(..)
     , Computer
+    , Insts
     , initialize
     , stepN
     ) where
@@ -23,7 +24,7 @@ listToIndexMap :: [a] -> Map Integer a
 listToIndexMap =
     fst . foldl (\(m, i) v -> (Map.insert i v m, i + 1)) (mempty, 0)
 
-parseInsts :: String -> Map Integer Integer
+parseInsts :: String -> Insts
 parseInsts = listToIndexMap . fmap read . splitOn ","
 
 data Mode
@@ -69,6 +70,8 @@ data WaitState
     = Halt
     | Prompt
     deriving (Eq, Show)
+
+type Insts = Map Integer Integer
 
 -- ( Relative Offset
 -- , Internal Input Buffer
