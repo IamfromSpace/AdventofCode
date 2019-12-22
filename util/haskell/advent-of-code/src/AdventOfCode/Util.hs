@@ -12,6 +12,7 @@ module AdventOfCode.Util
     , labelTrace
     , manDist
     , Manhattan
+    , parseGrid
     , prettyPrintPointMap
     , prettyPrintPointSet
     , byteStringToHex
@@ -44,6 +45,14 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceShow)
 import GHC.Word (Word8)
+
+parseGrid ::
+       (Integral a, Num a) => ((a, a) -> Char -> b -> b) -> b -> String -> b
+parseGrid f init s =
+    let go (x, y) fn r ((h:t):t2) = go (x + 1, y) fn (fn (x, y) h r) (t : t2)
+        go (x, y) fn r ([]:t) = go (0, y + 1) fn r t
+        go (x, y) fn r [] = r
+    in go (0, 0) f init (lines s)
 
 newtype Vector a = Vector
     { getVector :: a
