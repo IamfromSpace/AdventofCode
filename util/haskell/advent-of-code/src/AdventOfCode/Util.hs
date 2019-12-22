@@ -384,7 +384,7 @@ data AStarStepOption a b = AStarStepOption
     { position :: a
     , stepCost :: b
     , minimumRemainingCost :: b
-    }
+    } deriving (Show)
 
 aStarStep ::
        (Ord cost, Monoid cost, Ord position)
