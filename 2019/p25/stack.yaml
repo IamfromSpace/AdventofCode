@@ -1,0 +1,7 @@
+resolver: lts-14.16
+
+packages:
+- .
+
+extra-deps:
+- ../../util/haskell/advent-of-code
