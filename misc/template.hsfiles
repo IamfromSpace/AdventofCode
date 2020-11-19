@@ -82,7 +82,7 @@ import Distribution.Simple
 main = defaultMain
 
 {-# START_FILE stack.yaml #-}
-resolver: lts-14.16
+resolver: lts-16.22
 
 packages:
 - .
