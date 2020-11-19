@@ -100,6 +100,8 @@ module Lib
     , parse2
     , answer1
     , answer2
+    , show1
+    , show2
     ) where
 
 --import Prelude hiding (lookup)
@@ -132,6 +134,12 @@ answer1 = id
 answer2 :: _ -> _
 answer2 = id
 
+show1 :: Show _a => _a -> String
+show1 = show
+
+show2 :: Show _a => _a -> String
+show2 = show
+
 {-# START_FILE app/Main.hs #-}
 module Main where
 
@@ -149,10 +157,10 @@ main = do
     let pt2 = member "--pt2" args || null args
     when pt1 $ do
         putStrLn "part 1:"
-        putStr $ show $ answer1 $ parse1 contents
+        putStr $ show1 $ answer1 $ parse1 contents
     when pt2 $ do
         putStrLn "\npart 2:"
-        putStr $ show $ answer2 $ parse2 contents
+        putStr $ show2 $ answer2 $ parse2 contents
     putStrLn ""
 
 {-# START_FILE LICENSE #-}
