@@ -76,6 +76,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - {{name}}
+    - hspec
 
 {-# START_FILE Setup.hs #-}
 import Distribution.Simple
@@ -91,8 +92,139 @@ extra-deps:
 - ../../util/haskell/advent-of-code
 
 {-# START_FILE test/Spec.hs #-}
+import Control.Exception (catch, throw)
+import Data.Maybe (fromJust)
+import Lib
+import System.IO.Error (IOError, isDoesNotExistError)
+import Test.Hspec (describe, it, parallel, pendingWith, shouldBe)
+import Test.Hspec.Runner (hspec)
+
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main =
+    hspec $
+    parallel $ do
+        describe "part 1" $ do
+            it "example 1" $ do
+                let fileName = "./ex1_1.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer1 (parse1 contents) `shouldBe` ex1_1
+            it "example 2" $ do
+                let fileName = "./ex1_2.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer1 (parse1 contents) `shouldBe` ex1_2
+            it "example 3" $ do
+                let fileName = "./ex1_3.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer1 (parse1 contents) `shouldBe` ex1_3
+            it "example 4" $ do
+                let fileName = "./ex1_4.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer1 (parse1 contents) `shouldBe` ex1_4
+            it "example 5" $ do
+                let fileName = "./ex1_5.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer1 (parse1 contents) `shouldBe` ex1_5
+        describe "part 2" $ do
+            it "example 1" $ do
+                let fileName = "./ex2_1.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_1
+            it "example 2" $ do
+                let fileName = "./ex2_2.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_2
+            it "example 3" $ do
+                let fileName = "./ex2_3.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_3
+            it "example 4" $ do
+                let fileName = "./ex2_4.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_4
+            it "example 5" $ do
+                let fileName = "./ex2_5.txt"
+                mContents <-
+                    (Just <$> readFile fileName) `catch`
+                    (\e ->
+                         if isDoesNotExistError e
+                             then return Nothing
+                             else throw (e :: IOError))
+                case mContents of
+                    Nothing ->
+                        pendingWith ("File " <> fileName <> " does not exist")
+                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_5
 
 {-# START_FILE src/Lib.hs #-}
 module Lib
@@ -102,6 +234,16 @@ module Lib
     , answer2
     , show1
     , show2
+    , ex1_1
+    , ex1_2
+    , ex1_3
+    , ex1_4
+    , ex1_5
+    , ex2_1
+    , ex2_2
+    , ex2_3
+    , ex2_4
+    , ex2_5
     ) where
 
 --import Prelude hiding (lookup)
@@ -139,6 +281,36 @@ show1 = show
 
 show2 :: Show _a => _a -> String
 show2 = show
+
+ex1_1 :: _
+ex1_1 = undefined
+
+ex1_2 :: _
+ex1_2 = undefined
+
+ex1_3 :: _
+ex1_3 = undefined
+
+ex1_4 :: _
+ex1_4 = undefined
+
+ex1_5 :: _
+ex1_5 = undefined
+
+ex2_1 :: _
+ex2_1 = undefined
+
+ex2_2 :: _
+ex2_2 = undefined
+
+ex2_3 :: _
+ex2_3 = undefined
+
+ex2_4 :: _
+ex2_4 = undefined
+
+ex2_5 :: _
+ex2_5 = undefined
 
 {-# START_FILE app/Main.hs #-}
 module Main where
