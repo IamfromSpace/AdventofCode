@@ -14,7 +14,9 @@ module AdventOfCode.Util
     , Manhattan
     , parseGrid
     , prettyPrintPointMap
+    , prettyPrintPointMapFlippable
     , prettyPrintPointSet
+    , prettyPrintPointSetFlippable
     , byteStringToHex
     , applyNTimes
     , asCounted
@@ -249,21 +251,35 @@ instance HasArea (BoundingBox (Integer, Integer, Integer)) where
 instance HasArea (BoundingBox (Integer, Integer, Integer, Integer)) where
     area BoundingBox {vector = Vector (v0, v1, v2, v3)} = v0 * v1 * v2 * v3
 
-prettyPrintPointMap ::
-       Integral b => Char -> (a -> Char) -> Map (b, b) a -> String
-prettyPrintPointMap d fn m =
+prettyPrintPointMapFlippable ::
+       Integral b => Bool -> Char -> (a -> Char) -> Map (b, b) a -> String
+prettyPrintPointMapFlippable flipped d fn m =
     let (xs, ys) = unzip $ Map.keys m
         (minX, minY) = (minimum xs, minimum ys)
         (maxX, maxY) = (maximum xs, maximum ys)
     in unlines $
        chunksOf (fromIntegral maxX - fromIntegral minX + 1) $
        fmap (\(y, x) -> fromMaybe d $ fn <$> Map.lookup (x, y) m) $
-       liftA2 (,) (reverse [minY .. maxY]) [minX .. maxX]
+       liftA2
+           (,)
+           ((if flipped
+                 then id
+                 else reverse)
+                [minY .. maxY])
+           [minX .. maxX]
+
+prettyPrintPointMap ::
+       Integral b => Char -> (a -> Char) -> Map (b, b) a -> String
+prettyPrintPointMap = prettyPrintPointMapFlippable False
+
+prettyPrintPointSetFlippable ::
+       Integral b => Bool -> Char -> Char -> Set (b, b) -> String
+prettyPrintPointSetFlippable flipped notPresent present =
+    prettyPrintPointMapFlippable flipped notPresent (const present) .
+    Map.fromList . fmap (\x -> (x, ())) . Set.toList
 
 prettyPrintPointSet :: Integral b => Char -> Char -> Set (b, b) -> String
-prettyPrintPointSet notPresent present =
-    prettyPrintPointMap notPresent (const present) .
-    Map.fromList . fmap (\x -> (x, ())) . Set.toList
+prettyPrintPointSet = prettyPrintPointSetFlippable False
 
 word4in8ToHex :: Word8 -> Char
 word4in8ToHex 0 = '0'
