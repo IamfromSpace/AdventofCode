@@ -244,7 +244,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Data.Sequence (Seq)
-import Data.Sequence as Seq
+import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Prelude hiding ((++), lookup, map)
