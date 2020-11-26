@@ -1,0 +1,4 @@
+["strC", "pluC"], ["strG", "pluG"]
+["rutC", "curC"], ["rut"G, "curG", "thuG"]
+["thuC"],[]
+[],[]
