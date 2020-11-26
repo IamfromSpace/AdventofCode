@@ -14,6 +14,7 @@ import qualified Data.List.Split as Split
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
+import Data.Monoid (Sum(..))
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
@@ -124,25 +125,23 @@ options (3, (a, b, c, d)) =
     fmap (\(el, d') -> (2, (a, b, union el c, d'))) (options' d)
 options _ = error "bad floor!"
 
-find :: Set State -> [(Int, State)] -> Int
-find seen (x:t) =
-    let (steps, h) = x
-    in if safe ((snd h))
-           then (if done (snd h)
-                     then steps
-                     else let new =
-                                  filter
-                                      (not . flip Set.member seen)
-                                      (options h)
-                          in find
-                                 (List.foldl' (flip Set.insert) seen new)
-                                 (t <> (fmap ((,) (steps + 1)) new)))
-           else find seen t
-find _ [] = error "impossible!"
+find :: State -> Int
+find =
+    getSum .
+    fst .
+    Maybe.fromJust .
+    Util.aStar2
+        -- Smarter lower bounds don't seem to make things much faster
+        (\x ->
+             if done (snd x)
+                 then Sum 0
+                 else Sum 1)
+        (fmap (\o -> Util.AStarStepOption2 o (Sum 1)) .
+         List.filter (safe . snd) . options)
 
 -- 1:19:57 (Would have been 77 on the leaderboard)
 answer1 :: _ -> _
-answer1 = find mempty . pure . (,) 0 . (,) 0
+answer1 = find . (,) 0
 
 -- 1:23:40 (Would have been 47 on the leaderboard)
 answer2 :: _ -> String
