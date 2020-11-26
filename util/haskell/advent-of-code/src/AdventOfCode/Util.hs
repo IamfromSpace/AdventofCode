@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -6,6 +7,8 @@
 module AdventOfCode.Util
     ( aStar
     , AStarStepOption(..)
+    , aStar2
+    , AStarStepOption2(..)
     , trace
     , traceShow
     , elmTrace
@@ -496,4 +499,31 @@ aStar getOptions pInit =
     fromJust $
     evalState
         (iterateWhile isNothing (aStarStep getOptions))
+        (Nothing, mempty, Set.singleton (mempty, pInit, []))
+
+data AStarStepOption2 a b = AStarStepOption2
+    { position :: a
+    , stepCost :: b
+    } deriving (Show)
+
+-- Ideally we would implement aStarStep in terms of this impl, but we can't upgrade, only downgrade.  We keep around the others for compatibility.  It would be nice to just publish this as a package so that it could be version managed.
+aStar2 ::
+       (Ord cost, Ord position, Monoid cost)
+    => (position -> cost)
+    -> (position -> [AStarStepOption2 position cost])
+    -> position
+    -> Maybe (cost, [position])
+aStar2 getLowerBoundCost getOptions pInit =
+    fromJust $
+    evalState
+        (iterateWhile
+             isNothing
+             (aStarStep
+                  (fmap
+                       (\AStarStepOption2 {position, stepCost} ->
+                            AStarStepOption
+                                position
+                                stepCost
+                                (getLowerBoundCost position)) .
+                   getOptions)))
         (Nothing, mempty, Set.singleton (mempty, pInit, []))
