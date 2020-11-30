@@ -234,6 +234,7 @@ import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
+import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
