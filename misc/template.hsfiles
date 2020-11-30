@@ -229,6 +229,7 @@ main =
 {-# START_FILE src/Lib.hs #-}
 module Lib where
 
+import AdventOfCode.Util ()
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
@@ -241,12 +242,14 @@ import Data.ByteString.UTF8 ()
 import Data.Foldable (toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
+import Data.Monoid (Sum(..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
+import Data.String (fromString)
 import qualified Data.Set as Set
 import Prelude hiding ((++), init, lookup, map)
 
