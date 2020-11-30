@@ -5,10 +5,14 @@ import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
 import qualified Control.Monad.State.Lazy as Stae
-import qualified Crypto.Hash.MD5 as MD5
+
+-- cryptonite is unfortunately slower!
+-- long term should just hide hash details in a `String -> String` utility
+import qualified Crypto.Hash as Hash
 import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS8
 import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
 import Data.Foldable (foldMap, toList)
@@ -28,19 +32,15 @@ import Data.String (fromString)
 import Data.Word (Word8)
 import Prelude hiding ((++), init, lookup, map)
 
-parse1 :: String -> ByteString
-parse1 = fromString
+parse1 :: String -> String
+parse1 = id
 
 parse2 :: String -> _
 parse2 = parse1
 
-hashIndex :: ByteString -> Int -> [Word8]
+hashIndex :: String -> Int -> String
 hashIndex bs i =
-    foldMap
-        (\x ->
-             let (a, b) = x `divMod` 16
-             in [a, b]) $
-    BS.unpack $ MD5.hash (bs <> (fromString (show i)))
+    show $ (Hash.hash (BS8.pack (bs <> show i)) :: Hash.Digest Hash.MD5)
 
 repeats3 :: Eq a => [a] -> [a]
 repeats3 (a:b:c:t) =
@@ -58,7 +58,7 @@ repeats5 (a:b:c:d:e:t) =
         (repeats5 (b : c : d : e : t))
 repeats5 _ = []
 
-isKey :: [[Word8]] -> Int -> Bool
+isKey :: Ord a => [[a]] -> Int -> Bool
 isKey xs i =
     case (repeats3 (xs !! i)) of
         [] -> False
@@ -95,13 +95,12 @@ answer1 bs =
         qs = IntMap.fromAscList $ fmap (\i -> (i, quints xs i)) [0 .. 30000]
     in List.last $ List.take 64 $ List.filter (isKeyLazy ts qs) $ [0 .. 30000]
 
-stretchIndex :: ByteString -> Int -> [Word8]
+stretchIndex :: String -> Int -> String
 stretchIndex bs i =
-    BS.unpack
-        (List.foldl'
-             (\x _ -> fromString $ Util.byteStringToHex $ MD5.hash x)
-             (bs <> (fromString (show i)))
-             [0 .. 2016])
+    (iterate
+         (show . (Hash.hash :: ByteString -> Hash.Digest Hash.MD5) . BS8.pack)
+         (bs <> show i)) !!
+    2017
 
 -- 01:38:34.267
 answer2 :: _ -> _

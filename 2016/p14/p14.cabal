@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 51c48aefd1330c3923a4579d59175301643094690d7bdc9c0ce78544c5ae9488
+-- hash: dbf81d9d6bb76a17f63a1bd4748da1c683ff4329ea243202d7dd900130c68d11
 
 name:           p14
 version:        0.1.0.0
@@ -36,7 +36,7 @@ library
     , base >=4.7 && <5
     , bytestring
     , containers
-    , cryptohash-md5
+    , cryptonite
     , lens
     , monad-loops
     , mtl
@@ -58,7 +58,7 @@ executable aoc
     , base >=4.7 && <5
     , bytestring
     , containers
-    , cryptohash-md5
+    , cryptonite
     , lens
     , monad-loops
     , mtl
@@ -82,7 +82,7 @@ test-suite p14-test
     , base >=4.7 && <5
     , bytestring
     , containers
-    , cryptohash-md5
+    , cryptonite
     , hspec
     , lens
     , monad-loops

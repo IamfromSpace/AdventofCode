@@ -13,7 +13,7 @@ dependencies:
   - advent-of-code
   - bytestring
   - containers
-  - cryptohash-md5
+  - cryptonite
   - lens
   - monad-loops
   - mtl
