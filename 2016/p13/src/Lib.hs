@@ -9,6 +9,7 @@ import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
+import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
@@ -31,17 +32,12 @@ parse1 = read
 parse2 :: String -> _
 parse2 = parse1
 
-countBits :: Integer -> Integer
-countBits 0 = 0
-countBits x =
-    let (left, rem) = x `divMod` 2
-    in rem + countBits left
-
 isWall :: Integer -> Vector (Integer, Integer) -> Bool
 isWall favNum (getVector -> (x, y)) =
     x < 0 ||
     y < 0 ||
-    ((countBits (x * x + 3 * x + 2 * x * y + y + y * y + favNum)) `mod` 2 == 1)
+    ((Bits.popCount (x * x + 3 * x + 2 * x * y + y + y * y + favNum)) `mod` 2 ==
+     1)
 
 baseOptions :: [Vector (Integer, Integer)]
 baseOptions = [Vector (0, 1), Vector (0, (-1)), Vector (1, 0), Vector ((-1), 0)]
