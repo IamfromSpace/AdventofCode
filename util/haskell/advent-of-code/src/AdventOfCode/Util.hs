@@ -306,8 +306,7 @@ word4in8ToHex _ = error "Tried to convert value too large to hex!"
 
 word8ToHex :: Word8 -> String
 word8ToHex x =
-    let top = x `quot` 16
-        bottom = x - top
+    let (top, bottom) = x `divMod` 16
     in [word4in8ToHex top, word4in8ToHex bottom]
 
 byteStringToHex :: ByteString -> String
