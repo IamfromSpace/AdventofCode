@@ -42,9 +42,6 @@ isWall favNum (getVector -> (x, y)) =
 baseOptions :: [Vector (Integer, Integer)]
 baseOptions = [Vector (0, 1), Vector (0, (-1)), Vector (1, 0), Vector ((-1), 0)]
 
-options' :: Integer -> Vector (Integer, Integer) -> [Vector (Integer, Integer)]
-options' favNum p = filter (not . isWall favNum) $ fmap (<> p) baseOptions
-
 options ::
        Integer
     -> Vector (Integer, Integer)
@@ -72,24 +69,6 @@ answer1 favNum =
     fmap fst $
     Util.aStar2 (lowerBound (Vector (31, 39))) (options favNum) (Vector (1, 1))
 
-find ::
-       Integer
-    -> Set (Vector (Integer, Integer))
-    -> [(Int, Vector (Integer, Integer))]
-    -> Set (Vector (Integer, Integer))
-find _ seen [] = seen
-find favNum seen ((steps, p):t) =
-    if steps == 50
-        then find favNum seen t
-        else let newOptions =
-                     List.filter
-                         (not . flip Set.member seen)
-                         (options' favNum p)
-             in find
-                    favNum
-                    (List.foldl' (flip Set.insert) seen newOptions)
-                    (t <> fmap (\x -> (steps + 1, x)) newOptions)
-
 data Cell
     = Wall
     | Visit
@@ -111,7 +90,7 @@ upgrade favNum mmmm =
 --01:26:16.867
 answer2 :: _ -> _
 answer2 favNum =
-    Set.size $ find favNum (Set.fromList [Vector (1, 1)]) [(0, Vector (1, 1))]
+    Map.size $ Util.explore (Sum 50) (options favNum) (Vector (1, 1))
    {-
     Util.prettyPrintPointMap ' ' renderCell $
     upgrade favNum $

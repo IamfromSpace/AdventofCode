@@ -9,6 +9,7 @@ module AdventOfCode.Util
     , AStarStepOption(..)
     , aStar2
     , AStarStepOption2(..)
+    , explore
     , trace
     , traceShow
     , elmTrace
@@ -41,7 +42,7 @@ import Control.Applicative (liftA2)
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.ByteString (ByteString, unpack)
-import Data.List (partition, sortOn)
+import Data.List (foldl', partition, sortOn)
 import Data.List.Split (chunksOf)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -527,3 +528,44 @@ aStar2 getLowerBoundCost getOptions pInit =
                                 (getLowerBoundCost position)) .
                    getOptions)))
         (Nothing, mempty, Set.singleton (mempty, pInit, []))
+
+exploreStep ::
+       (Ord cost, Monoid cost, Ord position)
+    => cost
+    -> (position -> [AStarStepOption2 position cost])
+    -> State (Map position cost, Set (cost, position)) (Maybe (Map position cost))
+exploreStep maxCost getOptions = do
+    (seen, queue) <- get
+    case Set.minView queue of
+        Nothing -> return $ Just seen -- out of explorable points
+        Just ((prevCost, cheapestGuessPosition), queue') -> do
+            let newSearchNodes =
+                    filter
+                        (\(pathCost, position) ->
+                             pathCost <= maxCost &&
+                             case Map.lookup position seen of
+                                 Nothing -> True
+                                 -- TODO: We'd ideally like to remove this previous entry from the queue
+                                 Just lowestCost -> pathCost < lowestCost) $
+                    fmap
+                        (\AStarStepOption2 {position, stepCost} ->
+                             (stepCost <> prevCost, position)) $
+                    getOptions cheapestGuessPosition
+            put $
+                foldl'
+                    (\(s, q) x -> (Map.insert (snd x) (fst x) s, Set.insert x q))
+                    (seen, queue')
+                    newSearchNodes
+            return Nothing
+
+explore ::
+       (Ord cost, Ord position, Monoid cost)
+    => cost
+    -> (position -> [AStarStepOption2 position cost])
+    -> position
+    -> Map position cost
+explore maxCost getOptions pInit =
+    fromJust $
+    evalState
+        (iterateWhile isNothing (exploreStep maxCost getOptions))
+        (mempty, Set.singleton (mempty, pInit))
