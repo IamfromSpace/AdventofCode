@@ -25,7 +25,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Data.Monoid (Sum(..))
-import Data.Sequence (Seq)
+import Data.Sequence (Seq(..), (|>))
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -43,13 +43,12 @@ hashIndex :: String -> Int -> String
 hashIndex bs i =
     show $ (Hash.hash (BS8.pack (bs <> show i)) :: Hash.Digest Hash.MD5)
 
-repeats3 :: Eq a => [a] -> [a]
+repeats3 :: Eq a => [a] -> Maybe a
 repeats3 (a:b:c:t) =
-    (if (a == b && a == c)
-         then (:) a
-         else id)
-        (repeats3 (b : c : t))
-repeats3 _ = []
+    if (a == b && a == c)
+        then Just a
+        else repeats3 (b : c : t)
+repeats3 _ = Nothing
 
 repeats5 :: Eq a => [a] -> [a]
 repeats5 (a:b:c:d:e:t) =
@@ -59,18 +58,36 @@ repeats5 (a:b:c:d:e:t) =
         (repeats5 (b : c : d : e : t))
 repeats5 _ = []
 
-isKeyMonadic :: _ -> String -> [Int]
-isKeyMonadic h bs = do
-    i <- [0 ..]
-    let asHash = h bs i
-    three <- List.take 1 (repeats3 asHash)
-    j <- [i + 1 .. i + 1000]
-    guard (List.elem three (repeats5 (h bs j)))
-    return i
+bufferEntry :: (Int -> String) -> Int -> (Set Char, String, Int)
+bufferEntry h i =
+    let asHash = h i
+    in (Set.fromList (repeats5 asHash), asHash, i)
+
+isKeyStrict' ::
+       Int -> Seq (Set Char, String, Int) -> [Int] -> (Int -> String) -> Int
+isKeyStrict' !n !fives !(j:t) !h =
+    let ((_, iHash, i) :<| back) = fives
+        fives' = back |> bufferEntry h j
+    in if maybe
+              False
+              (\threeChar -> any (\(s, _, _) -> Set.member threeChar s) fives')
+              (repeats3 iHash)
+           then if n == 63
+                    then i
+                    else isKeyStrict' (n + 1) fives' t h
+           else isKeyStrict' n fives' t h
+
+isKeyStrict :: _ -> Int
+isKeyStrict h =
+    isKeyStrict'
+        0
+        (Seq.fromList $ fmap (bufferEntry h) $ [0 .. 999])
+        [1000 ..]
+        h
 
 -- 01:14:34.8
 answer1 :: _ -> _
-answer1 bs = isKeyMonadic hashIndex bs !! 63
+answer1 = isKeyStrict . hashIndex
 
 stretchIndex :: String -> Int -> String
 stretchIndex bs i =
@@ -81,7 +98,7 @@ stretchIndex bs i =
 
 -- 01:38:34.267
 answer2 :: _ -> _
-answer2 bs = isKeyMonadic stretchIndex bs !! 63
+answer2 = isKeyStrict . stretchIndex
 
 show1 :: Show _a => _a -> String
 show1 = show
