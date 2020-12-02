@@ -4,6 +4,7 @@ import AdventOfCode.Util ()
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
+import Control.Monad (guard)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
@@ -30,26 +31,22 @@ parse1 = fmap read . lines
 parse2 :: String -> _
 parse2 = parse1
 
-combos :: [Int] -> [(Int, Int)]
-combos is = do
-    i <- is
-    j <- is
-    return (i, j)
+answer1 :: [Int] -> Int
+answer1 xs =
+    head $ do
+        (i:ts') <- List.tails xs
+        j <- ts'
+        guard (i + j == 2020)
+        return (i * j)
 
-answer1 :: _ -> _
-answer1 = fmap (\(a, b) -> a * b) . filter (\(a, b) -> a + b == 2020) . combos
-
-combos2 :: [Int] -> [(Int, Int, Int)]
-combos2 is = do
-    i <- is
-    j <- is
-    k <- is
-    return (i, j, k)
-
-answer2 :: _ -> _
-answer2 =
-    fmap (\(a, b, c) -> a * b * c) .
-    filter (\(a, b, c) -> a + b + c == 2020) . combos2
+answer2 :: [Int] -> _
+answer2 xs =
+    head $ do
+        (i:ts') <- List.tails xs
+        (j:ts'') <- List.tails ts'
+        k <- ts''
+        guard (i + j + k == 2020)
+        return (i * j * k)
 
 show1 :: Show _a => _a -> String
 show1 = show
@@ -57,8 +54,8 @@ show1 = show
 show2 :: Show _a => _a -> String
 show2 = show
 
-ex1_1 :: [Int]
-ex1_1 = [51457]
+ex1_1 :: Int
+ex1_1 = 514579
 
 ex1_2 :: _
 ex1_2 = undefined
