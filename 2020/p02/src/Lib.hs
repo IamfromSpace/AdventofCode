@@ -52,8 +52,9 @@ answer1 = List.length . List.filter (uncurry testPolicy)
 
 testPolicy2 :: Policy -> String -> Bool
 testPolicy2 (Policy c low high) pass =
-    ((head $ List.drop (low - 1) pass) == c) /=
-    ((head $ List.drop (high - 1) pass) == c)
+    let (l:rem) = List.drop (low - 1) pass
+        (h:_) = List.drop (high - low - 1) rem
+    in (l == c) /= (h == c)
 
 answer2 :: _ -> _
 answer2 = List.length . List.filter (uncurry testPolicy2)
