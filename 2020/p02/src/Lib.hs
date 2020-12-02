@@ -32,13 +32,9 @@ data Policy =
 
 parseLine :: String -> (Policy, String)
 parseLine s =
-    case Split.splitOn ": " s of
-        [policy, pass] ->
-            case Split.splitOneOf "- " policy of
-                [low, high, [char]] ->
-                    (Policy char (read low) (read high), pass)
-                _ -> error "bad Parse"
-        _ -> error "bad Parse"
+    let [policy, pass] = Split.splitOn ": " s
+        [low, high, [char]] = Split.splitOneOf "- " policy
+    in (Policy char (read low) (read high), pass)
 
 parse1 :: String -> _
 parse1 = fmap parseLine . lines
@@ -56,10 +52,8 @@ answer1 = List.length . List.filter (uncurry testPolicy)
 
 testPolicy2 :: Policy -> String -> Bool
 testPolicy2 (Policy c low high) pass =
-    (head $ List.drop (low - 1) pass) == c &&
-    (head $ List.drop (high - 1) pass) /= c ||
-    (head $ List.drop (high - 1) pass) == c &&
-    (head $ List.drop (low - 1) pass) /= c
+    ((head $ List.drop (low - 1) pass) == c) /=
+    ((head $ List.drop (high - 1) pass) == c)
 
 answer2 :: _ -> _
 answer2 = List.length . List.filter (uncurry testPolicy2)
