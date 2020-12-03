@@ -24,45 +24,30 @@ import qualified Data.Set as Set
 import Data.String (fromString)
 import Prelude hiding ((++), init, lookup, map)
 
---parseGrid ::
---       (Integral a, Num a) => ((a, a) -> Char -> b -> b) -> b -> String -> b
-parse1 :: String -> (Int, Int, Set (Int, Int))
-parse1 s =
-    let grid =
-            Util.parseGrid
-                (\p c m ->
-                     if c == '#'
-                         then Set.insert p m
-                         else m)
-                Set.empty
-                s
-        height = List.length (lines s)
-        width = List.length (head (lines s))
-    in (height, width, grid)
+parse1 :: String -> _
+parse1 = fmap (fmap ((==) '#')) . lines
 
 parse2 :: String -> _
 parse2 = parse1
 
-step :: (Int, Int, Set (Int, Int)) -> (Int, Int) -> (Int, Int) -> Int
-step (h, w, g) (xxxx, yyyy) (x, y) =
-    let p = ((x + xxxx) `mod` w, y + yyyy)
-        trees =
-            if Set.member p g
-                then 1
-                else 0
-    in if y + 1 == h
-           then trees
-           else trees + step (h, w, g) (xxxx, yyyy) p
+skip :: Int -> [a] -> [a]
+skip n (h:t) = h : skip n (List.drop n t)
+skip _ [] = []
 
-answer1 :: _ -> _
-answer1 x = step x (3, 1) (0, 0)
+slope :: (Int, Int) -> _ -> Int
+slope (x, y) xs =
+    let width = List.length (head xs)
+    in List.length $
+       List.filter head $
+       List.zipWith drop (fmap (\x -> x `mod` width) [0,x ..]) (skip (y - 1) xs)
+
+answer1 :: _ -> Int
+answer1 = slope (3, 1)
 
 answer2 :: _ -> _
-answer2 i =
-    List.foldl' (*) 1 $
-    fmap
-        (\(x, y) -> step i (x, y) (0, 0))
-        [(1, 1), (3, 1), (5, 1), (7, 1), (1, 2)]
+answer2 xs =
+    List.product $
+    fmap (\p -> slope p xs) [(1, 1), (3, 1), (5, 1), (7, 1), (1, 2)]
 
 show1 :: Show _a => _a -> String
 show1 = show
