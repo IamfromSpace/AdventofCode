@@ -36,6 +36,7 @@ module AdventOfCode.Util
     , intoBoundingBox
     , isBoundedBy
     , area
+    , multiLines
     ) where
 
 import Control.Applicative (liftA2)
@@ -43,7 +44,7 @@ import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import Data.ByteString (ByteString, unpack)
 import Data.List (foldl', partition, sortOn)
-import Data.List.Split (chunksOf)
+import Data.List.Split (chunksOf, splitOn)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isNothing)
@@ -51,6 +52,15 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceShow)
 import GHC.Word (Word8)
+
+-- | This tries to act much like the base function 'lines' but for data that
+-- uses _two_ newlines to separate grouped data.  So instead of ending up with
+-- a list of Strings, you end up with a list of list of strings.
+--
+-- >>> multiLines "abc\ndef\n\n123\n456"
+-- [["abc","def"],["123","456"]]
+multiLines :: String -> [[String]]
+multiLines = splitOn [""] . lines
 
 parseGrid ::
        (Integral a, Num a) => ((a, a) -> Char -> b -> b) -> b -> String -> b

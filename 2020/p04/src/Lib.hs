@@ -1,6 +1,6 @@
 module Lib where
 
-import AdventOfCode.Util ()
+import AdventOfCode.Util (multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
@@ -27,20 +27,13 @@ import Prelude hiding ((++), init, lookup, map)
 parseLine :: String -> [(String, String)]
 parseLine s =
     let ts = Split.splitOn " " (s)
-    in fmap
-           ((\case
-                 [a, b] -> (a, b)
-                 x -> error (show x)) .
-            Split.splitOn ":")
-           ts
+    in fmap ((\[a, b] -> (a, b)) . Split.splitOn ":") ts
 
-parseLines :: [[(String, String)]] -> [String] -> [[(String, String)]]
-parseLines xs [] = xs
-parseLines xs ([]:t) = parseLines ([] : xs) t
-parseLines (x:xs) (h:t) = parseLines ((parseLine h <> x) : xs) t
+parseLines :: [String] -> Map String String
+parseLines = Map.fromList . foldMap parseLine
 
 parse1 :: String -> [Map String String]
-parse1 = fmap (Map.fromList) . parseLines [[]] . lines
+parse1 = fmap parseLines . multiLines
 
 parse2 :: String -> _
 parse2 = parse1

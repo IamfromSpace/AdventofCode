@@ -229,7 +229,7 @@ main =
 {-# START_FILE src/Lib.hs #-}
 module Lib where
 
-import AdventOfCode.Util ()
+import AdventOfCode.Util (multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
