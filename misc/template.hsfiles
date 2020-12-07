@@ -239,6 +239,7 @@ import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
+import qualified Data.Char as Char
 import Data.Foldable (toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
@@ -252,6 +253,7 @@ import Data.Set (Set)
 import Data.String (fromString)
 import qualified Data.Set as Set
 import Prelude hiding ((++), init, lookup, map)
+import Text.Read (readMaybe)
 
 parse1 :: String -> _
 parse1 = id
