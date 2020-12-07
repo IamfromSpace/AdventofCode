@@ -4,12 +4,15 @@ import AdventOfCode.Util (multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
+import Control.Arrow ((>>>))
+import Control.Monad ((>=>), guard)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
+import qualified Data.Char as Char
 import Data.Foldable (toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
@@ -23,6 +26,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (fromString)
 import Prelude hiding ((++), init, lookup, map)
+import Text.Read (readMaybe)
 
 parseLine :: String -> [(String, String)]
 parseLine s =
@@ -47,95 +51,67 @@ validate m =
 answer1 :: _ -> _
 answer1 = List.length . filter validate
 
+data Dim
+    = Cm Int
+    | In Int
+
+vByr :: Int -> Bool
+vByr x = x >= 1920 && x <= 2002
+
+vIyr :: Int -> Bool
+vIyr x = x >= 2010 && x <= 2020
+
+vEyr :: Int -> Bool
+vEyr x = x >= 2020 && x <= 2030
+
+pHgt :: String -> Maybe Dim
+pHgt s =
+    case reverse s of
+        'm':'c':x -> Cm <$> readMaybe (reverse x)
+        'n':'i':x -> In <$> readMaybe (reverse x)
+        _ -> Nothing
+
+vHgt :: Dim -> Bool
+vHgt (Cm x) = x >= 150 && x <= 193
+vHgt (In x) = x >= 59 && x <= 76
+
+isLowerHex :: Char -> Bool
+isLowerHex x = Char.isHexDigit x && Char.isLower x || Char.isDigit x
+
+pHcl :: String -> Maybe String
+pHcl x =
+    case x of
+        '#':t -> Just t
+        _ -> Nothing
+
+vHcl :: String -> Bool
+vHcl x = List.length x == 6 && (all (isLowerHex) x)
+
+vEcl :: String -> Bool
+vEcl =
+    flip
+        Set.member
+        (Set.fromList ["amb", "blu", "brn", "gry", "grn", "hzl", "oth"])
+
+vPid :: String -> Bool
+vPid x = List.length x == 9 && all Char.isDigit x
+
+validations :: [Map String String -> Bool]
+validations =
+    let f key parse val =
+            (Map.lookup key >=> parse >=> (pure . val)) >>>
+            Maybe.fromMaybe False
+    in [ f "byr" readMaybe vByr
+       , f "iyr" readMaybe vIyr
+       , f "eyr" readMaybe vEyr
+       , f "hgt" pHgt vHgt
+       , f "hcl" pHcl vHcl
+       , f "ecl" pure vEcl
+       , f "pid" pure vEcl
+       ]
+
 validate2 :: Map String String -> Bool
-validate2 m =
-    let hasAll =
-            all
-                (flip Set.member (Set.fromList $ Map.keys m))
-                ["byr", "iyr", "eyr", "hgt", "hcl", "ecl", "pid"] -- no cid?
-        byr =
-            maybe False ((\x -> x >= 1920 && x <= 2002) . read) $
-            Map.lookup "byr" m
-        iyr =
-            maybe False ((\x -> x >= 2010 && x <= 2020) . read) $
-            Map.lookup "iyr" m
-        eyr =
-            maybe False ((\x -> x >= 2020 && x <= 2030) . read) $
-            Map.lookup "eyr" m
-        hgt =
-            maybe
-                False
-                (((\case
-                       'm':'c':x ->
-                           let cm = read (reverse x)
-                           in cm >= 150 && cm <= 193
-                       'n':'i':x ->
-                           let cm = read (reverse x)
-                           in cm >= 59 && cm <= 76
-                       _ -> False) .
-                  reverse)) $
-            Map.lookup "hgt" m
-        hcl =
-            maybe
-                False
-                (\case
-                     '#':t ->
-                         List.length t == 6 &&
-                         all
-                             (flip
-                                  Set.member
-                                  (Set.fromList
-                                       [ 'a'
-                                       , 'b'
-                                       , 'c'
-                                       , 'd'
-                                       , 'e'
-                                       , 'f'
-                                       , '0'
-                                       , '1'
-                                       , '2'
-                                       , '3'
-                                       , '4'
-                                       , '5'
-                                       , '6'
-                                       , '7'
-                                       , '8'
-                                       , '9'
-                                       ]))
-                             t
-                     _ -> False) $
-            Map.lookup "hcl" m
-        ecl =
-            maybe
-                False
-                (flip
-                     Set.member
-                     (Set.fromList
-                          ["amb", "blu", "brn", "gry", "grn", "hzl", "oth"])) $
-            Map.lookup "ecl" m
-        pid =
-            maybe
-                False
-                (\x ->
-                     List.length x == 9 &&
-                     all
-                         (flip
-                              Set.member
-                              (Set.fromList
-                                   [ '0'
-                                   , '1'
-                                   , '2'
-                                   , '3'
-                                   , '4'
-                                   , '5'
-                                   , '6'
-                                   , '7'
-                                   , '8'
-                                   , '9'
-                                   ]))
-                         x) $
-            Map.lookup "pid" m
-    in hasAll && byr && iyr && eyr && hgt && hcl && ecl && pid
+validate2 = and . sequence validations
 
 answer2 :: _ -> _
 answer2 = List.length . filter validate2
