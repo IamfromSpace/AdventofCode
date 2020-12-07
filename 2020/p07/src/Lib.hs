@@ -4,6 +4,8 @@ import AdventOfCode.Util (multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
+import Control.Arrow
+       ((&&&), (***), (<+>), (<<<), (>>>), (|||), arr)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
@@ -24,31 +26,46 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (fromString)
 import Prelude hiding ((++), init, lookup, map)
+import Text.ParserCombinators.PArrow ((>>!))
+import qualified Text.ParserCombinators.PArrow as PA
+import Text.ParserCombinators.PArrow.MD (MD)
 import Text.Read (readMaybe)
 
-parseBagCounts :: String -> (Int, String)
-parseBagCounts x =
-    let (h, t) = break ((==) ' ') x
-        (h':_) = Split.splitOn " bag" (drop 1 t)
-    in (read h, h')
+decimal :: MD String Int
+decimal =
+    PA.many1 PA.digit >>> arr (List.foldr (\n acc -> acc * 10 + read [n]) 0)
 
-parseLine :: String -> Maybe (String, [(Int, String)])
-parseLine s =
-    let [s', _] = Split.splitOn "." s
-        [x, xs] = Split.splitOn " bags contain " s'
-    in if xs == "no other bags"
-           then Nothing
-           else Just (x, fmap parseBagCounts (Split.splitOn ", " xs))
+bag :: MD String ()
+bag = (PA.string "bag" &&& PA.optional (PA.char 's')) >>> arr (const ())
+
+bagColor :: MD String String
+bagColor =
+    let wordSpace = PA.word >>! PA.char ' '
+    in ((wordSpace &&& wordSpace) >>! bag) >>> arr (\(a, b) -> a <> " " <> b)
+
+bagCounts :: MD String (Int, String)
+bagCounts =
+    let count = decimal >>! PA.char ' '
+    in count &&& bagColor
+
+line :: MD String (String, [(Int, String)])
+line =
+    let noBags = PA.string "no other bags" >>> arr (const [])
+        contents = noBags <+> PA.sepBy1 bagCounts (PA.string ", ")
+    in ((bagColor >>! PA.string " contain ") &&& contents) >>! PA.char '.'
+
+input :: MD String (Map String [(Int, String)])
+input = PA.sepBy1 line (PA.char '\n') >>> arr Map.fromList
 
 parse1 :: String -> Map String [(Int, String)]
-parse1 = Map.fromList . Maybe.catMaybes . fmap parseLine . lines
+parse1 = either (error . unlines) id . PA.runParser input
 
 parse2 :: String -> _
 parse2 = parse1
 
 canHold :: Map String [(Int, String)] -> String -> String -> Bool
 canHold m target b =
-    Maybe.fromMaybe False $
+    Maybe.fromJust $
     any ((\x -> x == target || canHold m target x) . snd) <$> Map.lookup b m
 
 answer1 :: _ -> _
@@ -56,7 +73,7 @@ answer1 m = List.length $ filter (canHold m "shiny gold") $ Map.keys m
 
 countContents :: Map String [(Int, String)] -> String -> Int
 countContents m b =
-    Maybe.fromMaybe 0 $
+    Maybe.fromJust $
     (sum . fmap (\(count, x) -> count * (1 + countContents m x))) <$>
     Map.lookup b m
 
