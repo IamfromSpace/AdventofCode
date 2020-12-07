@@ -38,8 +38,8 @@ slope :: (Int, Int) -> _ -> Int
 slope (x, y) xs =
     let width = List.length (head xs)
     in List.length $
-       List.filter head $
-       List.zipWith drop (fmap (\x -> x `mod` width) [0,x ..]) (skip (y - 1) xs)
+       List.filter id $
+       List.zipWith (!!) (skip (y - 1) xs) (fmap (\x -> x `mod` width) [0,x ..])
 
 answer1 :: _ -> Int
 answer1 = slope (3, 1)
