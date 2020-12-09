@@ -20,7 +20,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Data.Monoid (Sum(..))
-import Data.Sequence (Seq)
+import Data.Sequence (Seq, (<|), (|>))
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -50,27 +50,17 @@ find n xs =
 answer1 :: [Int] -> Int
 answer1 = find 25
 
-tryTotal :: Int -> [Int] -> Maybe [Int]
-tryTotal target xs =
-    case take 1 $
-         reverse $
-         List.takeWhile (\x -> fst x <= target) $
-         fmap (\n -> (sum $ take n xs, n)) [2 .. 100] of
-        [stretch] ->
-            if fst stretch == target
-                then Just (take (snd stretch) xs)
-                else Nothing
-        _ -> Nothing
-
-findTotal :: Int -> [Int] -> Int
-findTotal target xs =
-    let x =
-            List.sort $
-            head $ Maybe.catMaybes $ fmap (tryTotal target) $ List.tails xs
-    in head x + head (reverse x)
+findTotal :: Int -> Seq Int -> [Int] -> Int
+findTotal target queue (h:t) =
+    if sum queue == target
+        then let x = List.sort $ toList queue
+             in head x + List.last x
+        else if sum queue + h > target
+                 then findTotal target (Seq.drop 1 queue) (h : t)
+                 else findTotal target (queue |> h) t
 
 answer2 :: _ -> _
-answer2 xs = findTotal (answer1 xs) xs
+answer2 xs = findTotal (answer1 xs) mempty xs
 
 show1 :: Show _a => _a -> String
 show1 = show
