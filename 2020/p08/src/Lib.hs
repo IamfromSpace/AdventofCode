@@ -14,7 +14,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
-import Data.Either (rights)
+import qualified Data.Either as Either
 import Data.Foldable (toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
@@ -87,7 +87,7 @@ runToHalt :: Seq Inst -> Either [(Int, Int)] Int
 runToHalt = consume mempty mempty . flip run (pure (0, 0))
 
 answer1 :: _ -> _
-answer1 = either (snd . head) (const $ error "halted") . runToHalt
+answer1 = snd . head . Either.fromLeft [] . runToHalt
 
 swap :: Int -> Seq Inst -> Maybe (Seq Inst)
 swap i insts =
@@ -99,8 +99,8 @@ swap i insts =
 answer2 :: _ -> _
 answer2 insts =
     head $
-    rights $
-    fmap ((maybe (Left []) Right . flip swap insts) >=> runToHalt) [0 ..]
+    Either.rights $
+    fmap runToHalt $ Maybe.catMaybes $ fmap (flip swap insts) [0 ..]
 
 show1 :: Show _a => _a -> String
 show1 = show
