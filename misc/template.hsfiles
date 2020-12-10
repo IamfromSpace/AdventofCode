@@ -247,7 +247,7 @@ import Data.Monoid (Sum(..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
-import Data.Sequence (Seq)
+import Data.Sequence (Seq(..), (<|), (|>))
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import Data.String (fromString)
