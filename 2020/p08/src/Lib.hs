@@ -69,19 +69,25 @@ step insts (ip, acc) =
 run :: Seq Inst -> Either Int (Int, Int) -> [Either Int (Int, Int)]
 run = iterate . ((=<<) . step)
 
-consume :: Set Int -> [Either Int (Int, Int)] -> Either Int Int
-consume seen (Right (ip, acc):t) =
+consume ::
+       Set Int
+    -> [(Int, Int)]
+    -> [Either Int (Int, Int)]
+    -> Either [(Int, Int)] Int
+consume seen path (Right (ip, acc):t) =
     if Set.member ip seen
-        then Left acc
-        else consume (Set.insert ip seen) t
-consume _ (Left acc:_) = Right acc
-consume _ [] = error "iterations must be infinite!"
+        then Left path
+        else consume (Set.insert ip seen) ((ip, acc) : path) t
+consume _ _ (Left acc:_) = Right acc
+consume _ _ [] = error "iterations must be infinite!"
 
-runToHalt :: Seq Inst -> Either Int Int
-runToHalt = consume mempty . flip run (pure (0, 0))
+-- Return either the cycle (Left) or the final value of the accumulator (Right)
+-- TODO: really we could just return the path in all cases and a Bool if it's a cycle or a halt
+runToHalt :: Seq Inst -> Either [(Int, Int)] Int
+runToHalt = consume mempty mempty . flip run (pure (0, 0))
 
 answer1 :: _ -> _
-answer1 = either id (const $ error "halted") . runToHalt
+answer1 = either (snd . head) (const $ error "halted") . runToHalt
 
 swap :: Int -> Seq Inst -> Maybe (Seq Inst)
 swap i insts =
@@ -94,7 +100,7 @@ answer2 :: _ -> _
 answer2 insts =
     head $
     rights $
-    fmap ((maybe (Left 0) Right . flip swap insts) >=> runToHalt) [0 ..]
+    fmap ((maybe (Left []) Right . flip swap insts) >=> runToHalt) [0 ..]
 
 show1 :: Show _a => _a -> String
 show1 = show
