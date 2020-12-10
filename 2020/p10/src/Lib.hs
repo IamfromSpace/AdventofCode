@@ -14,7 +14,7 @@ import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
 import qualified Data.Either as Either
-import Data.Foldable (toList)
+import Data.Foldable (fold, toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
 import Data.Map (Map)
@@ -46,21 +46,29 @@ answer1 xs =
         threes = List.length $ filter (\[a, b] -> b - a == 3) pairs
     in (ones + 1) * (threes + 1)
 
-combos :: Int -> Int
-combos 0 = 1
-combos 1 = 1
-combos 2 = 2
-combos 3 = 4
-combos 4 = 7
+(!?) :: [a] -> Int -> Maybe a
+(!?) xs i =
+    case drop i xs of
+        (x:_) -> Just x
+        _ -> Nothing
+
+elseNothing :: Maybe Bool -> Maybe a -> Maybe a
+elseNothing b i = do
+    b' <- b
+    if b'
+        then i
+        else Nothing
+
+arrangements :: [Int] -> [Sum Int]
+arrangements (a:t@(_:_)) =
+    let tArr = arrangements t
+        ifDrop i = elseNothing ((\x -> x - a <= 3) <$> (t !? i)) (tArr !? i)
+    in (fold ((tArr !? 0) <> ifDrop 1 <> ifDrop 2)) : tArr
+arrangements (_:_) = [Sum 1]
+arrangements [] = []
 
 answer2 :: [Int] -> Int
-answer2 xs =
-    product $
-    fmap (combos . List.length) $
-    Split.splitWhen ((==) 3) $
-    fmap (\[a, b] -> b - a) $
-    filter (\x -> List.length x == 2) $
-    fmap (take 2) $ List.tails $ List.sort (0 : xs)
+answer2 = getSum . head . arrangements . List.sort . (:) 0
 
 show1 :: Show _a => _a -> String
 show1 = show
