@@ -14,6 +14,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
+import Data.Either (rights)
 import Data.Foldable (toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
@@ -55,34 +56,32 @@ parse1 = Seq.fromList . fmap parseInst . lines
 parse2 :: String -> _
 parse2 = parse1
 
-step :: Seq Inst -> (Int, Int) -> (Int, Int)
+step :: Seq Inst -> (Int, Int) -> Either Int (Int, Int)
 step insts (ip, acc) =
-    case Maybe.fromJust $ Seq.lookup ip insts of
-        Acc i -> (ip + 1, acc + i)
-        Jmp i -> (ip + i, acc)
-        Nop _ -> (ip + 1, acc)
+    maybe (Left acc) Right $
+    fmap
+        (\case
+             Acc i -> (ip + 1, acc + i)
+             Jmp i -> (ip + i, acc)
+             Nop _ -> (ip + 1, acc))
+        (Seq.lookup ip insts)
 
-run :: Seq Inst -> (Int, Int) -> [(Int, Int)]
-run = iterate . step
+run :: Seq Inst -> Either Int (Int, Int) -> [Either Int (Int, Int)]
+run = iterate . ((=<<) . step)
 
-findLoop :: Set Int -> [(Int, Int)] -> Int
-findLoop seen ((ip, acc):t) =
+consume :: Set Int -> [Either Int (Int, Int)] -> Either Int Int
+consume seen (Right (ip, acc):t) =
     if Set.member ip seen
-        then acc
-        else findLoop (Set.insert ip seen) t
-findLoop _ [] = error "machine halted!"
+        then Left acc
+        else consume (Set.insert ip seen) t
+consume _ (Left acc:_) = Right acc
+consume _ [] = error "iterations must be infinite!"
+
+runToHalt :: Seq Inst -> Either Int Int
+runToHalt = consume mempty . flip run (pure (0, 0))
 
 answer1 :: _ -> _
-answer1 = findLoop mempty . flip run (0, 0)
-
-findLoop2 :: Int -> Set Int -> [(Int, Int)] -> Maybe Int
-findLoop2 n seen ((ip, acc):t) =
-    if ip >= n
-        then Just acc
-        else if Set.member ip seen
-                 then Nothing
-                 else findLoop2 n (Set.insert ip seen) t
-findLoop2 _ _ [] = error "machine halted!"
+answer1 = either id (const $ error "halted") . runToHalt
 
 swap :: Int -> Seq Inst -> Maybe (Seq Inst)
 swap i insts =
@@ -94,11 +93,8 @@ swap i insts =
 answer2 :: _ -> _
 answer2 insts =
     head $
-    Maybe.catMaybes $
-    fmap
-        (flip swap insts >=>
-         (findLoop2 (Seq.length insts) mempty . (flip run (0, 0))))
-        [0 ..]
+    rights $
+    fmap ((maybe (Left 0) Right . flip swap insts) >=> runToHalt) [0 ..]
 
 show1 :: Show _a => _a -> String
 show1 = show
