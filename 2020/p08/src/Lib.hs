@@ -6,6 +6,7 @@ import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
 import Control.Arrow
        ((&&&), (***), (<+>), (<<<), (>>>), (|||), arr)
+import Control.Monad ((>=>))
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
@@ -37,18 +38,16 @@ data Inst
     | Nop Int
     deriving (Show, Eq)
 
-parseNum :: String -> Int
-parseNum s =
-    case head s of
-        '-' -> (-1) * read (drop 1 s)
-        '+' -> read (drop 1 s)
+parsePlussed :: String -> Int
+parsePlussed = read . List.dropWhile ((==) '+')
 
 parseInst :: String -> Inst
 parseInst s =
     case Split.splitOn " " s of
-        ["acc", x] -> Acc (parseNum x)
-        ["jmp", x] -> Jmp (parseNum x)
-        ["nop", x] -> Nop (parseNum x)
+        ["acc", x] -> Acc (parsePlussed x)
+        ["jmp", x] -> Jmp (parsePlussed x)
+        ["nop", x] -> Nop (parsePlussed x)
+        _ -> error "Couldn't parse Inst"
 
 parse1 :: String -> _
 parse1 = Seq.fromList . fmap parseInst . lines
@@ -63,28 +62,27 @@ step insts (ip, acc) =
         Jmp i -> (ip + i, acc)
         Nop _ -> (ip + 1, acc)
 
-findLoop :: Seq Inst -> Set Int -> (Int, Int) -> Int
-findLoop insts seen state =
-    let (ip, acc) = step insts state
-        seen' = Set.insert ip seen
-    in if Set.member ip seen
-           then acc
-           else findLoop insts seen' (ip, acc)
+run :: Seq Inst -> (Int, Int) -> [(Int, Int)]
+run = iterate . step
+
+findLoop :: Set Int -> [(Int, Int)] -> Int
+findLoop seen ((ip, acc):t) =
+    if Set.member ip seen
+        then acc
+        else findLoop (Set.insert ip seen) t
+findLoop _ [] = error "machine halted!"
 
 answer1 :: _ -> _
-answer1 insts = findLoop insts mempty (0, 0)
+answer1 = findLoop mempty . flip run (0, 0)
 
-findLoop2 :: Seq Inst -> Set Int -> (Int, Int) -> Maybe Int
-findLoop2 insts seen state =
-    let (ip, acc) = step insts state
-        seen' = Set.insert ip seen
-        cont =
-            if Set.member ip seen
-                then Nothing
-                else findLoop2 insts seen' (ip, acc)
-    in if ip >= Seq.length insts
-           then Just acc
-           else cont
+findLoop2 :: Int -> Set Int -> [(Int, Int)] -> Maybe Int
+findLoop2 n seen ((ip, acc):t) =
+    if ip >= n
+        then Just acc
+        else if Set.member ip seen
+                 then Nothing
+                 else findLoop2 n (Set.insert ip seen) t
+findLoop2 _ _ [] = error "machine halted!"
 
 swap :: Int -> Seq Inst -> Maybe (Seq Inst)
 swap i insts =
@@ -98,8 +96,9 @@ answer2 insts =
     head $
     Maybe.catMaybes $
     fmap
-        (\i -> swap i insts >>= (\insts' -> findLoop2 insts' mempty (0, 0)))
-        [0 .. Seq.length insts - 1]
+        (flip swap insts >=>
+         (findLoop2 (Seq.length insts) mempty . (flip run (0, 0))))
+        [0 ..]
 
 show1 :: Show _a => _a -> String
 show1 = show
