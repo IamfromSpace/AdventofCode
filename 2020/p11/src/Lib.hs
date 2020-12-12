@@ -46,76 +46,79 @@ parse1 xs =
         Map.empty
         xs
 
-parse2 :: String -> _
-parse2 = parse1
+data State
+    = Taken
+    | Free
+    | Floor
+    deriving (Eq, Show)
+
+parse2 :: String -> Map (Integer, Integer) State
+parse2 xs =
+    Util.parseGrid
+        (\p c m ->
+             case c of
+                 'L' -> Map.insert p Free m
+                 '#' -> Map.insert p Taken m
+                 '.' -> Map.insert p Floor m
+                 _ -> error "bad input")
+        Map.empty
+        xs
+
+neighbors :: Num a => [(a, a)]
+neighbors = take 8 $ App.liftA2 (,) [-1, 1, 0] [-1, 1, 0]
 
 step :: Map (Integer, Integer) Bool -> Map (Integer, Integer) Bool
 step m =
     Map.foldrWithKey
         (\(x, y) currentlyOcc m' ->
-             let occ1 = Map.lookup (x + 1, y) m
-                 occ2 = Map.lookup (x - 1, y) m
-                 occ3 = Map.lookup (x, y + 1) m
-                 occ4 = Map.lookup (x, y - 1) m
-                 occ5 = Map.lookup (x + 1, y + 1) m
-                 occ6 = Map.lookup (x - 1, y - 1) m
-                 occ7 = Map.lookup (x - 1, y + 1) m
-                 occ8 = Map.lookup (x + 1, y - 1) m
-                 occCount =
+             let occCount =
                      List.length $
                      filter id $
-                     Maybe.catMaybes
-                         [occ1, occ2, occ3, occ4, occ5, occ6, occ7, occ8]
-             in if currentlyOcc
-                    then Map.insert (x, y) (not (occCount >= 4)) m'
-                    else Map.insert (x, y) (occCount == 0) m')
+                     Maybe.catMaybes $
+                     fmap (\(x', y') -> Map.lookup (x + x', y + y') m) neighbors
+                 nextState =
+                     if currentlyOcc
+                         then not (occCount >= 4)
+                         else occCount == 0
+             in Map.insert (x, y) nextState m')
         mempty
         m
 
---findCycle :: Eq a => (a -> a) -> a -> (Integer, Integer, a)
 answer1 :: _ -> _
-answer1 = (\m -> List.length $ List.filter id $ Map.elems m) . fix step
+answer1 = List.length . List.filter id . Map.elems . fix step
 
 look ::
-       Map (Integer, Integer) Bool
+       Map (Integer, Integer) State
     -> (Integer, Integer)
     -> (Integer, Integer)
     -> Bool
 look m (x, y) (xOff, yOff) =
-    let options =
-            List.zip
-                (takeWhile
-                     (\xx -> xx >= 0 && xx <= 99)
-                     [x + xOff,x + 2 * xOff ..])
-                (takeWhile
-                     (\xx -> xx >= 0 && xx <= 99)
-                     [y + yOff,y + 2 * yOff ..])
-        xxx = Maybe.catMaybes $ fmap (flip Map.lookup m) options
-    in case xxx of
-           [] -> False
-           (h:_) -> h
+    let takenSeats =
+            List.filter ((/=) (Just Floor)) $
+            List.takeWhile Maybe.isJust $
+            fmap (flip Map.lookup m) $
+            drop 1 $ List.zip [x,x + xOff ..] [y,y + yOff ..]
+    in case takenSeats of
+           (Just Taken:_) -> True
+           _ -> False
 
-step2 :: Map (Integer, Integer) Bool -> Map (Integer, Integer) Bool
-step2 m =
-    Map.foldrWithKey
-        (\(x, y) currentlyOcc m' ->
-             let occCount =
-                     List.length $
-                     filter id $
-                     [ look m (x, y) (1, 0)
-                     , look m (x, y) (-1, 0)
-                     , look m (x, y) (0, 1)
-                     , look m (x, y) (0, -1)
-                     , look m (x, y) (1, 1)
-                     , look m (x, y) (-1, -1)
-                     , look m (x, y) (-1, 1)
-                     , look m (x, y) (1, -1)
-                     ]
-             in if currentlyOcc
-                    then Map.insert (x, y) (not (occCount >= 5)) m'
-                    else Map.insert (x, y) (occCount == 0) m')
-        mempty
-        m
+getNextState ::
+       Map (Integer, Integer) State -> (Integer, Integer) -> State -> State
+getNextState m p state =
+    let occCount = List.length $ filter id $ fmap (look m p) $ neighbors
+    in case state of
+           Floor -> Floor
+           Taken ->
+               if occCount >= 5
+                   then Free
+                   else Taken
+           Free ->
+               if occCount == 0
+                   then Taken
+                   else Free
+
+step2 :: Map (Integer, Integer) State -> Map (Integer, Integer) State
+step2 m = Map.foldrWithKey (\p -> Map.insert p . getNextState m p) mempty m
 
 fix :: Eq a => (a -> a) -> a -> a
 fix fn a =
@@ -125,7 +128,7 @@ fix fn a =
            else fix fn next
 
 answer2 :: _ -> _
-answer2 = (List.length . List.filter id . Map.elems) . fix step2
+answer2 = List.length . List.filter ((==) Taken) . Map.elems . fix step2
 
 show1 :: Show _a => _a -> String
 show1 = show
