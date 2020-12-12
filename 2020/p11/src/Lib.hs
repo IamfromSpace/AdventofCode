@@ -1,6 +1,6 @@
 module Lib where
 
-import AdventOfCode.Util (multiLines)
+import AdventOfCode.Util (Vector(..), multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
@@ -36,15 +36,14 @@ input = PA.many PA.anyChar
 
 --parseGrid ::
 --       (Integral a, Num a) => ((a, a) -> Char -> b -> b) -> b -> String -> b
-parse1 :: String -> Map (Integer, Integer) Bool
-parse1 xs =
+parse1 :: String -> Map (Vector (Integer, Integer)) Bool
+parse1 =
     Util.parseGrid
         (\p c m ->
              if c == 'L'
-                 then Map.insert p False m
+                 then Map.insert (Vector p) False m
                  else m)
         Map.empty
-        xs
 
 data State
     = Taken
@@ -52,58 +51,66 @@ data State
     | Floor
     deriving (Eq, Show)
 
-parse2 :: String -> Map (Integer, Integer) State
-parse2 xs =
+parse2 :: String -> Map (Vector (Integer, Integer)) State
+parse2 =
     Util.parseGrid
         (\p c m ->
              case c of
-                 'L' -> Map.insert p Free m
-                 '#' -> Map.insert p Taken m
-                 '.' -> Map.insert p Floor m
+                 'L' -> Map.insert (Vector p) Free m
+                 '#' -> Map.insert (Vector p) Taken m
+                 '.' -> Map.insert (Vector p) Floor m
                  _ -> error "bad input")
         Map.empty
-        xs
 
-neighbors :: Num a => [(a, a)]
-neighbors = take 8 $ App.liftA2 (,) [-1, 1, 0] [-1, 1, 0]
+neighbors :: Num a => [Vector (a, a)]
+neighbors = take 8 $ App.liftA2 (\x y -> Vector (x, y)) [-1, 1, 0] [-1, 1, 0]
 
-step :: Map (Integer, Integer) Bool -> Map (Integer, Integer) Bool
+step ::
+       Map (Vector (Integer, Integer)) Bool
+    -> Map (Vector (Integer, Integer)) Bool
 step m =
     Map.foldrWithKey
-        (\(x, y) currentlyOcc m' ->
+        (\p currentlyOcc m' ->
              let occCount =
                      List.length $
                      filter id $
                      Maybe.catMaybes $
-                     fmap (\(x', y') -> Map.lookup (x + x', y + y') m) neighbors
+                     fmap (flip Map.lookup m . ((<>) p)) neighbors
                  nextState =
                      if currentlyOcc
                          then not (occCount >= 4)
                          else occCount == 0
-             in Map.insert (x, y) nextState m')
+             in Map.insert p nextState m')
         mempty
         m
 
 answer1 :: _ -> _
 answer1 = List.length . List.filter id . Map.elems . fix step
 
+mappendForever :: Monoid a => a -> a -> [a]
+mappendForever offset init =
+    let x = (init <> offset)
+    in x : mappendForever offset x
+
 look ::
-       Map (Integer, Integer) State
-    -> (Integer, Integer)
-    -> (Integer, Integer)
+       Map (Vector (Integer, Integer)) State
+    -> Vector (Integer, Integer)
+    -> Vector (Integer, Integer)
     -> Bool
-look m (x, y) (xOff, yOff) =
+look m p offset =
     let takenSeats =
             List.filter ((/=) (Just Floor)) $
             List.takeWhile Maybe.isJust $
-            fmap (flip Map.lookup m) $
-            drop 1 $ List.zip [x,x + xOff ..] [y,y + yOff ..]
+            fmap (flip Map.lookup m) $ mappendForever p offset
     in case takenSeats of
            (Just Taken:_) -> True
            _ -> False
 
 getNextState ::
-       Map (Integer, Integer) State -> (Integer, Integer) -> State -> State
+       Map (Vector (Integer, Integer)) State
+    -> Vector (Integer, Integer)
+    -> State
+    -> State
 getNextState m p state =
     let occCount = List.length $ filter id $ fmap (look m p) $ neighbors
     in case state of
@@ -117,7 +124,9 @@ getNextState m p state =
                    then Taken
                    else Free
 
-step2 :: Map (Integer, Integer) State -> Map (Integer, Integer) State
+step2 ::
+       Map (Vector (Integer, Integer)) State
+    -> Map (Vector (Integer, Integer)) State
 step2 m = Map.foldrWithKey (\p -> Map.insert p . getNextState m p) mempty m
 
 fix :: Eq a => (a -> a) -> a -> a
