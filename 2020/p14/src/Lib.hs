@@ -5,7 +5,7 @@ import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
 import Control.Arrow
-       ((&&&), (***), (<+>), (<<<), (>>>), (|||), arr)
+       (Arrow, (&&&), (***), (<+>), (<<<), (>>>), (>>^), (|||), arr)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import Data.Bits ((.&.), (.|.))
@@ -38,19 +38,28 @@ data Inst
           Int
     deriving (Show)
 
-parseMem :: String -> Int
-parseMem s =
-    let ["mem", x, _] = Split.splitOneOf "[]" s
-    in read x
+(!>>) :: Arrow a => a b ignore -> a b c -> a b c
+(!>>) a b = (a &&& b) >>^ snd
 
-parseLine :: String -> Inst
-parseLine s =
-    case Split.splitOn " = " s of
-        ["mask", x] -> Mask x
-        [mem, x] -> Mem (parseMem mem) (read x)
+int :: MD String Int
+int = PA.many PA.digit >>^ read
 
-parse1 :: String -> _
-parse1 = fmap parseLine . lines
+mask :: MD String Inst
+mask = (PA.string "mask = " !>> PA.many (PA.anyOf "01X")) >>^ Mask
+
+mem :: MD String Inst
+mem =
+    (((PA.string "mem[") !>> int) &&& ((PA.string "] = ") !>> int)) >>^
+    (uncurry Mem)
+
+line :: MD String Inst
+line = mask <+> mem
+
+input :: MD String [Inst]
+input = PA.sepBy1 line (PA.char '\n')
+
+parse1 :: String -> [Inst]
+parse1 = either (error . unlines) id . PA.runParser input
 
 parse2 :: String -> _
 parse2 = parse1
