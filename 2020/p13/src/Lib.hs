@@ -14,7 +14,7 @@ import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
 import qualified Data.Either as Either
-import Data.Foldable (minimumBy, toList)
+import Data.Foldable (foldl1, minimumBy, toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
 import Data.Map (Map)
@@ -67,18 +67,23 @@ answer1 (start, busses) =
 test :: Int -> [(Int, Int)] -> Bool
 test t = all (\(min, bus) -> (t + min) `mod` bus == 0)
 
-sync :: Int -> (Int, Int) -> (Int, Int)
-sync bus1 (min2, bus2) =
-    let [a, b] =
-            fmap ((*) bus1) $
-            take 2 $ filter (\n -> (n * bus1 + min2) `mod` bus2 == 0) [1 ..]
-    in (a, b - a)
+sync :: (Int, Int) -> (Int, Int) -> (Int, Int)
+sync a@(_, cycle1) b@(_, cycle2) =
+    if cycle1 < cycle2
+        then sync' b a
+        else sync' a b
 
--- (t `mod` bus) == ((t + min) `mod` bus2)
--- total hack, couldn't figure out how to combine larger cycles, so this was
--- the biggest one I could correctly identify.  Solves in about 30min
-answer2 :: _ -> _
-answer2 xs = head $ filter (flip test xs) [14934,14934 + 14953 ..]
+sync' :: (Int, Int) -> (Int, Int) -> (Int, Int)
+sync' (first1, cycle1) (first2, cycle2) =
+    let a =
+            head $
+            filter
+                (\n -> (n - first2) `mod` cycle2 == 0)
+                [first1,first1 + cycle1 ..]
+    in (a, (cycle1 * cycle2) `div` (gcd cycle1 cycle2))
+
+answer2 :: [_] -> _
+answer2 = fst . foldl1 sync . fmap (\(a, b) -> (b - a, b))
 
 show1 :: Show _a => _a -> String
 show1 = show
