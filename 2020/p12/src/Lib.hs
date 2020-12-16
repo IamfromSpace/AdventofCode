@@ -1,6 +1,6 @@
 module Lib where
 
-import AdventOfCode.Util (Vector(..), manLen, multiLines)
+import AdventOfCode.Util (R2, Vector(..), left, manLen, multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
@@ -34,20 +34,31 @@ import Text.Read (readMaybe)
 
 data Inst
     = V (Vector (Integer, Integer))
-    | Turn Integer
+    | Turn (R2 Integer)
     | Forward Integer
     deriving (Show)
+
+around :: Num a => R2 a
+around = left <> left
+
+right :: Num a => R2 a
+right = around <> left
 
 parseV :: String -> Inst
 parseV s =
     case head $ take 1 s of
-        'N' -> V $ Vector (0, read (drop 1 s))
-        'S' -> V $ Vector (0, -1 * read (drop 1 s))
-        'E' -> V $ Vector (read (drop 1 s), 0)
-        'W' -> V $ Vector (-1 * read (drop 1 s), 0)
-        'R' -> Turn $ ((read (drop 1 s) `div` 90) `mod` 4)
-        'L' -> Turn $ (4 - (read (drop 1 s) `div` 90) `mod` 4)
+        'E' -> V $ flip Util.upgrade mempty $ Vector $ read $ drop 1 s
+        'N' -> V $ flip Util.upgrade left $ Vector $ read $ drop 1 s
+        'W' -> V $ flip Util.upgrade around $ Vector $ read $ drop 1 s
+        'S' -> V $ flip Util.upgrade right $ Vector $ read $ drop 1 s
         'F' -> Forward $ read (drop 1 s)
+        _ ->
+            case s of
+                "L90" -> Turn left
+                "R270" -> Turn left
+                "L180" -> Turn (left <> left)
+                "R180" -> Turn (left <> left)
+                _ -> Turn (left <> left <> left)
 
 parse1 :: String -> [Inst]
 parse1 = fmap parseV . lines
@@ -57,17 +68,14 @@ parse2 = parse1
 
 step ::
        Inst
-    -> (Vector (Integer, Integer), Integer)
-    -> (Vector (Integer, Integer), Integer)
+    -> (Vector (Integer, Integer), R2 Integer)
+    -> (Vector (Integer, Integer), R2 Integer)
 step (V a) (v, f) = (a <> v, f)
-step (Turn x) (v, f) = (v, (f + x) `mod` 4)
-step (Forward x) (v, 0) = (v <> Vector (x, 0), 0)
-step (Forward x) (v, 1) = (v <> Vector (0, -x), 1)
-step (Forward x) (v, 2) = (v <> Vector (-x, 0), 2)
-step (Forward x) (v, 3) = (v <> Vector (0, x), 3)
+step (Turn x) (v, f) = (v, f <> x)
+step (Forward x) (v, r) = (v <> Util.upgrade (Vector x) r, r)
 
 answer1 :: [Inst] -> _
-answer1 = manLen . fst . List.foldl' (flip step) (Vector (0, 0), 0)
+answer1 = manLen . fst . List.foldl' (flip step) (mempty, mempty)
 
 sub :: Vector (Integer, Integer)
     -> Vector (Integer, Integer)
@@ -80,10 +88,7 @@ step2 ::
     -> (Vector (Integer, Integer), Vector (Integer, Integer))
 step2 (V a) (ship, waypoint) = (ship, waypoint <> a)
 step2 (Forward x) (ship, waypoint) = (ship <> stimes x waypoint, waypoint)
-step2 (Turn 0) (ship, waypoint) = (ship, waypoint)
-step2 (Turn 1) (ship, Vector (x, y)) = (ship, Vector (y, -x))
-step2 (Turn 2) (ship, Vector (x, y)) = (ship, Vector (-x, -y))
-step2 (Turn 3) (ship, Vector (x, y)) = (ship, Vector (-y, x))
+step2 (Turn r) (ship, waypoint) = (ship, Util.rotate r waypoint)
 
 answer2 :: [Inst] -> _
 answer2 =

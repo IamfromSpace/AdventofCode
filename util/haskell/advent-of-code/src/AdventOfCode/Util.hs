@@ -16,6 +16,10 @@ module AdventOfCode.Util
     , labelTrace
     , manDist
     , Manhattan
+    , R2
+    , left
+    , rotate
+    , upgrade
     , parseGrid
     , prettyPrintPointMap
     , prettyPrintPointMapFlippable
@@ -264,6 +268,34 @@ instance HasArea (BoundingBox (Integer, Integer, Integer)) where
 
 instance HasArea (BoundingBox (Integer, Integer, Integer, Integer)) where
     area BoundingBox {vector = Vector (v0, v1, v2, v3)} = v0 * v1 * v2 * v3
+
+data R2 a =
+    R2 a -- Upper Left
+       a -- Upper Right
+       a -- Bottom Left
+       a -- Bottom Right
+    deriving (Show, Eq)
+
+rotate :: Num a => R2 a -> Vector (a, a) -> Vector (a, a)
+rotate (R2 ul ur bl br) (Vector (x, y)) =
+    Vector (x * ul + y * ur, x * bl + y * br)
+
+left :: Num a => R2 a
+left = R2 0 (-1) 1 0
+
+instance Num a => Semigroup (R2 a) where
+    R2 ul1 ur1 bl1 br1 <> R2 ul2 ur2 bl2 br2 =
+        R2
+            (ul1 * ul2 + ur1 * bl2)
+            (ul1 * ur2 + ur1 * br2)
+            (bl1 * ul2 + br1 * bl2)
+            (bl1 * ur2 + br1 * br2)
+
+instance Num a => Monoid (R2 a) where
+    mempty = R2 1 0 0 1
+
+upgrade :: Num a => Vector a -> R2 a -> Vector (a, a)
+upgrade (Vector x) r = rotate r (Vector (x, 0))
 
 prettyPrintPointMapFlippable ::
        Integral b => Bool -> Char -> (a -> Char) -> Map (b, b) a -> String
