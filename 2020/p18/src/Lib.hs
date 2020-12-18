@@ -5,7 +5,7 @@ import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
 import Control.Arrow
-       ((&&&), (***), (<+>), (<<<), (>>>), (>>^), (|||), arr)
+       ((&&&), (***), (<+>), (<<<), (>>>), (>>^), (^>>), (|||), arr)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
@@ -41,50 +41,34 @@ data Expr
     | E (Expr, [(Op, Expr)])
     deriving (Show)
 
+-- lit = decimal
+-- op = " * " | " + "
+-- val = lit | e
+-- e = "(" top ")"
+-- top = val (op val)*
 lit :: MD String Expr
 lit = PA.digit >>^ (Lit . read . pure)
 
-add :: MD String Op
-add = ((expr >>! PA.string " + ") &&& expr) >>^ (const Add)
-
-mult :: MD String Op
-mult = ((expr >>! PA.string " * ") &&& expr) >>^ (const Mult)
-
 op :: MD String Op
-op = mult <+> add
+op = (PA.string " + " >>^ const Add) <+> (PA.string " * " >>^ const Mult)
+
+val :: MD String Expr
+val = lit <+> e
+
+top :: MD String Expr
+top = (val &&& (PA.many1 (op &&& val))) >>^ E
 
 e :: MD String Expr
-e = (expr &&& PA.many (op &&& expr)) >>^ E
+e = PA.between (PA.string "(") (PA.string ")") top
 
-expr :: MD String Expr
-expr = e <+> lit
-
-justParse p = either (const (error "bad")) id . PA.runParser p
-
-input :: MD String _
-input = PA.sepBy1 expr (PA.char '\n')
+input :: MD String [Expr]
+input = PA.sepBy1 top (PA.char '\n')
 
 parse1 :: String -> _
---parse1 = justParse input
-parse1 = lines
+parse1 = either (error . unlines) id . PA.runParser input
 
 parse2 :: String -> _
 parse2 = parse1
-
-doIt :: Maybe (Expr, [(Op, Expr)]) -> String -> (Expr, String)
-doIt Nothing ('(':t) =
-    let (inner, t') = doIt Nothing t
-    in doIt (Just (inner, [])) t'
-doIt Nothing (x:t) =
-    (Lit (read (takeWhile Char.isDigit (x : t))), dropWhile Char.isDigit t)
-doIt (Just (e, es)) (' ':'*':' ':t) =
-    let (inner, t') = doIt Nothing t
-    in doIt (Just (e, es <> [(Mult, inner)])) t'
-doIt (Just (e, es)) (' ':'+':' ':t) =
-    let (inner, t') = doIt Nothing t
-    in doIt (Just (e, es <> [(Add, inner)])) t'
-doIt (Just x) (')':t) = (E x, t)
-doIt (Just x) [] = (E x, "")
 
 toInt :: Expr -> Int
 toInt (Lit x) = x
@@ -92,8 +76,8 @@ toInt (E (a, [])) = toInt a
 toInt (E (a, (Add, b):t)) = toInt (E (Lit (toInt a + toInt b), t))
 toInt (E (a, (Mult, b):t)) = toInt (E (Lit (toInt a * toInt b), t))
 
-answer1 :: [String] -> Int
-answer1 = sum . fmap (toInt . fst . doIt Nothing . (\xs -> "(" <> xs <> ")"))
+answer1 :: [_] -> Int
+answer1 = sum . fmap toInt
 
 --soooo lazy (not in the good Haskell-y way).
 toInt2 :: Expr -> Int
@@ -116,7 +100,7 @@ toInt2 (E (a, (Mult, b):(Mult, c):(Mult, d):(Mult, e):(Add, f):t)) =
 toInt2 (E (a, (Mult, b):t)) = toInt2 (E (Lit (toInt2 a * toInt2 b), t))
 
 answer2 :: [_] -> _
-answer2 = sum . fmap (toInt2 . fst . doIt Nothing . (\xs -> "(" <> xs <> ")"))
+answer2 = sum . fmap toInt2
 
 show1 :: Show _a => _a -> String
 show1 = show
