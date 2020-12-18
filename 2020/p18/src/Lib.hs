@@ -79,25 +79,15 @@ toInt (E (a, (Mult, b):t)) = toInt (E (Lit (toInt a * toInt b), t))
 answer1 :: [_] -> Int
 answer1 = sum . fmap toInt
 
---soooo lazy (not in the good Haskell-y way).
+toInt2' :: Int -> Expr -> Int
+toInt2' _ (Lit x) = x
+toInt2' !stack (E (a, [])) = toInt2 a * stack
+toInt2' !stack (E (a, (Mult, b):t)) = toInt2' (toInt2 a * stack) (E (b, t))
+toInt2' !stack (E (a, (Add, b):t)) =
+    toInt2' stack (E (Lit (toInt2 a + toInt2 b), t))
+
 toInt2 :: Expr -> Int
-toInt2 (Lit x) = x
-toInt2 (E (a, [])) = toInt2 a
-toInt2 (E (a, (Add, b):t)) = toInt2 (E (Lit (toInt2 a + toInt2 b), t))
-toInt2 (E (a, (Mult, b):(Add, c):t)) =
-    toInt2 (E (a, (Mult, Lit (toInt2 b + toInt2 c)) : t))
-toInt2 (E (a, (Mult, b):(Mult, c):(Add, d):t)) =
-    toInt2 (E (a, (Mult, b) : (Mult, Lit (toInt2 c + toInt2 d)) : t))
-toInt2 (E (a, (Mult, b):(Mult, c):(Mult, d):(Add, e):t)) =
-    toInt2
-        (E (a, (Mult, b) : (Mult, c) : (Mult, Lit (toInt2 d + toInt2 e)) : t))
-toInt2 (E (a, (Mult, b):(Mult, c):(Mult, d):(Mult, e):(Add, f):t)) =
-    toInt2
-        (E
-             ( a
-             , (Mult, b) :
-               (Mult, c) : (Mult, d) : (Mult, Lit (toInt2 e + toInt2 f)) : t))
-toInt2 (E (a, (Mult, b):t)) = toInt2 (E (Lit (toInt2 a * toInt2 b), t))
+toInt2 = toInt2' 1
 
 answer2 :: [_] -> _
 answer2 = sum . fmap toInt2
