@@ -116,7 +116,7 @@ _46 :: MD String String
 _46 = (_29 &<>& _71) <+> (_63 &<>& _72)
 
 _71 :: MD String String
-_71 = (PA.char 'a') >>^ pure
+_71 = PA.string "a"
 
 _129 :: MD String String
 _129 = (_49 &<>& _71) <+> (_80 &<>& _72)
@@ -161,7 +161,7 @@ _64 :: MD String String
 _64 = (_72 &<>& _96) <+> (_71 &<>& _56)
 
 _72 :: MD String String
-_72 = (PA.char 'b') >>^ pure
+_72 = PA.string "b"
 
 _131 :: MD String String
 _131 = (_63 &<>& _72) <+> (_56 &<>& _71)
