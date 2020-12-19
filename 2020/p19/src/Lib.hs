@@ -214,9 +214,6 @@ _130 = (_71 &<>& _110) <+> (_72 &<>& _56)
 _0 :: MD String String
 _0 = _8 &<>& _11
 
-_0n :: MD String String -> MD String String -> MD String String
-_0n _8 _11 = _8 &<>& _11
-
 _117 :: MD String String
 _117 = (_66 &<>& _71) <+> (_27 &<>& _72)
 
@@ -282,9 +279,6 @@ _34 = (_55 &<>& _72) <+> (_9 &<>& _71)
 
 _11 :: MD String String
 _11 = _42 &<>& _31
-
-_11n :: Int -> MD String String
-_11n n = (countAndFold n _42) &<>& (countAndFold n _31)
 
 _14 :: MD String String
 _14 = (_56 &<>& _71) <+> (_96 &<>& _72)
@@ -462,21 +456,19 @@ answer1 =
     length .
     Either.rights . fmap (PA.runParser (_0 >>! PA.notFollowedBy PA.anyChar))
 
+-- Must match the second parser at least once, and then the first parse must
+-- match more times than the second
+moreAThanBMin1 :: MD a b -> MD a c -> MD a (([b], [c]), Bool)
+moreAThanBMin1 a b =
+    (PA.many1 a &&& PA.many1 b) >>^ (\x@(as, bs) -> (x, length as > length bs))
+
 answer2 :: _ -> _
-answer2 xs =
-    length $
-    Set.toList $
-    fold $
-    App.liftA2
-        (\n8 n11 ->
-             Set.fromList $
-             Either.rights $
-             fmap
-                 (PA.runParser
-                      (_0n (_8n n8) (_11n n11) >>! PA.notFollowedBy PA.anyChar))
-                 xs)
-        [1 .. 7]
-        [1 .. 7]
+answer2 =
+    length .
+    filter (\x -> x == Right True) .
+    fmap
+        (PA.runParser
+             (((moreAThanBMin1 _42 _31) >>^ snd) >>! PA.notFollowedBy PA.anyChar))
 
 show1 :: Show _a => _a -> String
 show1 = show
