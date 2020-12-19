@@ -130,7 +130,9 @@ _113 = ((_10 &&& _72) <+> (_1 &&& _71)) >>^ uncurry (<>)
 _106 :: MD String String
 _106 = ((_26 &&& _72) <+> (_6 &&& _71)) >>^ uncurry (<>)
 
---_8 = _42
+_8 :: MD String String
+_8 = _42
+
 _8n :: Int -> MD String String
 _8n n = (PA.count n _42) >>^ (concat)
 
@@ -203,8 +205,11 @@ _88 = ((_72 &&& _89) <+> (_71 &&& _102)) >>^ uncurry (<>)
 _130 :: MD String String
 _130 = ((_71 &&& _110) <+> (_72 &&& _56)) >>^ uncurry (<>)
 
-_0 :: MD String String -> MD String String -> MD String String
-_0 _8 _11 = ((_8 &&& _11)) >>^ uncurry (<>)
+_0 :: MD String String
+_0 = ((_8 &&& _11)) >>^ uncurry (<>)
+
+_0n :: MD String String -> MD String String -> MD String String
+_0n _8 _11 = ((_8 &&& _11)) >>^ uncurry (<>)
 
 _117 :: MD String String
 _117 = ((_66 &&& _71) <+> (_27 &&& _72)) >>^ uncurry (<>)
@@ -442,28 +447,6 @@ _125 = ((_71 &&& _124) <+> (_72 &&& _94)) >>^ uncurry (<>)
 _102 :: MD String String
 _102 = ((_119 &&& _72) <+> (_98 &&& _71)) >>^ uncurry (<>)
 
------
-__0 = ((__4 &&& __1) &&& __5) >>^ const ()
-
-__1 = ((__2 &&& __3) <+> (__3 &&& __2)) >>^ const ()
-
-__2 = ((__4 &&& __4) <+> (__5 &&& __5)) >>^ const ()
-
-__3 = ((__4 &&& __5) <+> (__5 &&& __4)) >>^ const ()
-
-__4 = (PA.char 'a') >>^ const ()
-
-__5 = (PA.char 'b') >>^ const ()
-
-test =
-    length $
-    Either.rights $
-    fmap
-        (PA.runParser (__0 &&& PA.notFollowedBy PA.anyChar))
-        ["ababbb", "bababa", "abbbab", "aaabbb", "aaaabbb"]
-
-justParse p = either (error . unlines) id . PA.runParser p
-
 parse1 :: String -> [String]
 parse1 = head . drop 1 . multiLines
 
@@ -471,7 +454,12 @@ parse2 :: String -> _
 parse2 = parse1
 
 answer1 :: [String] -> _
-answer1 xs =
+answer1 =
+    length .
+    Either.rights . fmap (PA.runParser (_0 >>! PA.notFollowedBy PA.anyChar))
+
+answer2 :: _ -> _
+answer2 xs =
     length $
     Set.toList $
     fold $
@@ -481,13 +469,10 @@ answer1 xs =
              Either.rights $
              fmap
                  (PA.runParser
-                      (_0 (_8n n8) (_11n n11) >>! PA.notFollowedBy PA.anyChar))
+                      (_0n (_8n n8) (_11n n11) >>! PA.notFollowedBy PA.anyChar))
                  xs)
         [1 .. 7]
         [1 .. 7]
-
-answer2 :: _ -> _
-answer2 = id
 
 show1 :: Show _a => _a -> String
 show1 = show
