@@ -445,16 +445,41 @@ _125 = (_71 &<>& _124) <+> (_72 &<>& _94)
 _102 :: MD String String
 _102 = (_119 &<>& _72) <+> (_98 &<>& _71)
 
-parse1 :: String -> [String]
-parse1 = head . drop 1 . multiLines
+type Rule = (String, Either Char [[String]])
+
+dQuote :: MD String String
+dQuote = PA.string "\""
+
+baseRule :: MD String Char
+baseRule = (PA.char ' ' &&& PA.between dQuote dQuote (PA.anyOf "ab")) >>^ snd
+
+refRule :: MD String [[String]]
+refRule =
+    PA.sepBy1
+        (PA.many1 (((PA.char ' ') &&& (PA.many1 PA.digit)) >>^ snd))
+        (PA.string " |")
+
+rule :: MD String Rule
+rule =
+    (PA.many1 PA.digit >>! PA.char ':') &&&
+    ((baseRule >>^ Left) <+> (refRule >>^ Right))
+
+input :: MD String ([Rule], [String])
+input =
+    (PA.many1 (rule >>! PA.string "\n")) &&&
+    (PA.sepBy1 (PA.many (PA.anyOf "ab")) (PA.char '\n'))
+
+parse1 :: String -> ([Rule], [String])
+parse1 = either (error . unlines) id . PA.runParser input
 
 parse2 :: String -> _
 parse2 = parse1
 
-answer1 :: [String] -> _
+answer1 :: ([Rule], [String]) -> _
 answer1 =
     length .
-    Either.rights . fmap (PA.runParser (_0 >>! PA.notFollowedBy PA.anyChar))
+    Either.rights .
+    fmap (PA.runParser (_0 >>! PA.notFollowedBy PA.anyChar)) . snd
 
 -- Must match the second parser at least once, and then the first parse must
 -- match more times than the second
@@ -468,7 +493,8 @@ answer2 =
     filter (\x -> x == Right True) .
     fmap
         (PA.runParser
-             (((moreAThanBMin1 _42 _31) >>^ snd) >>! PA.notFollowedBy PA.anyChar))
+             (((moreAThanBMin1 _42 _31) >>^ snd) >>! PA.notFollowedBy PA.anyChar)) .
+    snd
 
 show1 :: Show _a => _a -> String
 show1 = show
