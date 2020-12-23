@@ -1,0 +1,8 @@
+resolver: lts-16.22
+
+packages:
+- .
+
+extra-deps:
+- ../../util/haskell/advent-of-code
+- PArrows-0.1.1@sha256:2225036bb85db9d0e5921b690881762bc2ba84b852ecff735ecd19f1bb91814c,1295
