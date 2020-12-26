@@ -54,34 +54,6 @@ move len (current :<| a :<| b :<| c :<| cups) =
                Seq.insertAt (destIndex + 1) c rem
            Nothing -> rem |> a |> b |> c
 
-move2 :: Int -> (Int, IntMap Int) -> (Int, IntMap Int)
-move2 len (current, cups) =
-    Maybe.fromJust $ do
-        a <- IM.lookup current cups
-        b <- IM.lookup a cups
-        c <- IM.lookup b cups
-        next <- IM.lookup c cups
-        let moved = Set.fromList [a, b, c]
-        let offset =
-                if not (Set.member (current - 1) moved)
-                    then 1
-                    else if not (Set.member (current - 2) moved)
-                             then 2
-                             else if not (Set.member (current - 3) moved)
-                                      then 3
-                                      else if not
-                                                  (Set.member
-                                                       (current - 4)
-                                                       moved)
-                                               then 4
-                                               else undefined
-        let destination = ((len + current - 1 - offset) `mod` len) + 1
-        afterDestination <- IM.lookup destination cups
-        let cups' =
-                IM.insert destination a $
-                IM.insert c afterDestination $ IM.insert current next cups
-        return (next, cups')
-
 finalize :: Seq Int -> String
 finalize s =
     let i = Maybe.fromJust $ Seq.findIndexL ((==) 1) s
@@ -91,29 +63,53 @@ finalize s =
 answer1 :: _ -> _
 answer1 s = finalize (iterate (move 9) s !! 100)
 
-finalize2 :: (Int, IntMap Int) -> (Int, Int)
-finalize2 (_, m) =
-    Maybe.fromJust $ do
-        a <- IM.lookup 1 m
-        b <- IM.lookup a m
-        return (a, b)
+type X = (IntMap (Seq Int), Seq Int)
 
-init :: Seq Int -> (Int, IntMap Int)
-init (a :<| b :<| c :<| d :<| e :<| f :<| g :<| h :<| i :<| Empty) =
-    ( a
-    , IM.fromList
-          ([ (1000000, a)
-           , (a, b)
-           , (b, c)
-           , (c, d)
-           , (d, e)
-           , (e, f)
-           , (f, g)
-           , (g, h)
-           , (h, i)
-           , (i, 10)
-           ] <>
-           zip [10 .. 999999] [11 .. 1000000]))
+takeX :: X -> (Int, X)
+takeX (lazyInserts, h :<| t) =
+    case IM.lookup h lazyInserts of
+        Just s -> (h, (IM.delete h lazyInserts, s <> t))
+        Nothing -> (h, (lazyInserts, t))
+takeX _ = error "X's seq was empty!"
+
+injectAfter :: Int -> Seq Int -> X -> X
+injectAfter afterValue s (lazyInserts, t) =
+    (IM.insert afterValue s lazyInserts, t)
+
+pushBack :: Int -> X -> X
+pushBack v (lazyInserts, seq) = (lazyInserts, seq |> v)
+
+move2 :: Int -> X -> X
+move2 len x =
+    let (current, x') = takeX x
+        (a, x'') = takeX x'
+        (b, x''') = takeX x''
+        (c, x'''') = takeX x'''
+        moved = Set.fromList [a, b, c]
+        offset =
+            if not (Set.member (current - 1) moved)
+                then 1
+                else if not (Set.member (current - 2) moved)
+                         then 2
+                         else if not (Set.member (current - 3) moved)
+                                  then 3
+                                  else if not (Set.member (current - 4) moved)
+                                           then 4
+                                           else undefined
+        destination = ((len + current - 1 - offset) `mod` len) + 1
+    in pushBack current $ injectAfter destination (Seq.fromList [a, b, c]) x''''
+
+finalize2 :: X -> Integer
+finalize2 x =
+    let (v, x') = takeX x
+    in if v == 1
+           then let (a, x'') = takeX x'
+                    (b, _) = takeX x''
+                in fromIntegral a * fromIntegral b
+           else finalize2 x'
+
+init :: Seq Int -> X
+init s = (mempty, s <> Seq.fromList [10 .. 1000000])
 
 answer2 :: Seq Int -> _
 answer2 s = finalize2 (iterate (move2 1000000) (init s) !! 10000000)
@@ -139,8 +135,8 @@ ex1_4 = undefined
 ex1_5 :: _
 ex1_5 = undefined
 
-ex2_1 :: (Int, Int)
-ex2_1 = (934001, 159792)
+ex2_1 :: Integer
+ex2_1 = 934001 * 159792
 
 ex2_2 :: _
 ex2_2 = undefined
