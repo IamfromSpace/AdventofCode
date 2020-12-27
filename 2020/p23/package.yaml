@@ -21,6 +21,7 @@ dependencies:
   - split
   - text
   - utf8-string
+  - vector
 
 default-extensions:
   - BangPatterns

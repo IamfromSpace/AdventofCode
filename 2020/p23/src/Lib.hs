@@ -6,6 +6,7 @@ import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
 import Control.Arrow
        ((&&&), (***), (<+>), (<<<), (>>>), (|||), arr)
+import Control.Monad ((>=>))
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
@@ -28,6 +29,8 @@ import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (fromString)
+import Data.Vector.Unboxed.Mutable (IOVector)
+import qualified Data.Vector.Unboxed.Mutable as Vec
 import Prelude hiding ((++), init, lookup, map)
 import Text.ParserCombinators.PArrow (MD, (>>!))
 import qualified Text.ParserCombinators.PArrow as PA
@@ -63,30 +66,14 @@ finalize s =
 answer1 :: _ -> _
 answer1 s = finalize (iterate (move 9) s !! 100)
 
-type X = (IntMap (Seq Int), Seq Int)
-
-takeX :: X -> (Int, X)
-takeX (lazyInserts, h :<| t) =
-    case IM.lookup h lazyInserts of
-        Just s -> (h, (IM.delete h lazyInserts, s <> t))
-        Nothing -> (h, (lazyInserts, t))
-takeX _ = error "X's seq was empty!"
-
-injectAfter :: Int -> Seq Int -> X -> X
-injectAfter afterValue s (lazyInserts, t) =
-    (IM.insert afterValue s lazyInserts, t)
-
-pushBack :: Int -> X -> X
-pushBack v (lazyInserts, seq) = (lazyInserts, seq |> v)
-
-move2 :: Int -> X -> X
-move2 len x =
-    let (current, x') = takeX x
-        (a, x'') = takeX x'
-        (b, x''') = takeX x''
-        (c, x'''') = takeX x'''
-        moved = Set.fromList [a, b, c]
-        offset =
+move2 :: Int -> IOVector Int -> Int -> IO Int
+move2 len cups current = do
+    a <- Vec.unsafeRead cups current
+    b <- Vec.unsafeRead cups a
+    c <- Vec.unsafeRead cups b
+    next <- Vec.unsafeRead cups c
+    let moved = Set.fromList [a, b, c]
+    let offset =
             if not (Set.member (current - 1) moved)
                 then 1
                 else if not (Set.member (current - 2) moved)
@@ -96,23 +83,46 @@ move2 len x =
                                   else if not (Set.member (current - 4) moved)
                                            then 4
                                            else undefined
-        destination = ((len + current - 1 - offset) `mod` len) + 1
-    in pushBack current $ injectAfter destination (Seq.fromList [a, b, c]) x''''
+    let destination = ((len + current - 1 - offset) `mod` len) + 1
+    afterDestination <- Vec.unsafeRead cups destination
+    Vec.unsafeWrite cups current next
+    Vec.unsafeWrite cups destination a
+    Vec.unsafeWrite cups c afterDestination
+    return next
 
-finalize2 :: X -> Integer
-finalize2 x =
-    let (v, x') = takeX x
-    in if v == 1
-           then let (a, x'') = takeX x'
-                    (b, _) = takeX x''
-                in fromIntegral a * fromIntegral b
-           else finalize2 x'
+move2Many :: Int -> Int -> IOVector Int -> Int -> IO ()
+move2Many 0 _ _ = const (return ())
+move2Many n len cups = move2 len cups >=> move2Many (n - 1) len cups
 
-init :: Seq Int -> X
-init s = (mempty, s <> Seq.fromList [10 .. 1000000])
+finalize2 :: IOVector Int -> IO Integer
+finalize2 cups = do
+    a <- Vec.unsafeRead cups 1
+    b <- Vec.unsafeRead cups a
+    return (fromIntegral a * fromIntegral b)
 
-answer2 :: Seq Int -> _
-answer2 s = finalize2 (iterate (move2 1000000) (init s) !! 10000000)
+init :: Seq Int -> IO (Int, IOVector Int)
+init (a :<| b :<| c :<| d :<| e :<| f :<| g :<| h :<| i :<| Empty) = do
+    cups <- Vec.new 1000001
+    Vec.unsafeWrite cups 1000000 a
+    Vec.unsafeWrite cups a b
+    Vec.unsafeWrite cups b c
+    Vec.unsafeWrite cups c d
+    Vec.unsafeWrite cups d e
+    Vec.unsafeWrite cups e f
+    Vec.unsafeWrite cups f g
+    Vec.unsafeWrite cups g h
+    Vec.unsafeWrite cups h i
+    Vec.unsafeWrite cups i 10
+    _ <-
+        sequence $
+        List.zipWith (Vec.unsafeWrite cups) [10 .. 999999] [11 .. 1000000]
+    return (a, cups)
+
+answer2 :: Seq Int -> IO Integer
+answer2 s = do
+    (first, cups) <- init s
+    move2Many 10000000 1000000 cups first
+    finalize2 cups
 
 show1 :: Show _a => _a -> String
 show1 = show

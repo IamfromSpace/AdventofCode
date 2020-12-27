@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 74dd8fd5cd092a2c650592bde745a853df468cbb08880d411ab37cee1ded927d
+-- hash: 5fc0278522ceebb81053518749aa7ebc3be71475205592403457274c6da7db54
 
 name:           p23
 version:        0.1.0.0
@@ -44,6 +44,7 @@ library
     , split
     , text
     , utf8-string
+    , vector
   default-language: Haskell2010
 
 executable aoc
@@ -68,6 +69,7 @@ executable aoc
     , split
     , text
     , utf8-string
+    , vector
   default-language: Haskell2010
 
 test-suite p23-test
@@ -94,4 +96,5 @@ test-suite p23-test
     , split
     , text
     , utf8-string
+    , vector
   default-language: Haskell2010

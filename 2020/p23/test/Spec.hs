@@ -82,7 +82,9 @@ main =
                 case mContents of
                     Nothing ->
                         pendingWith ("File " <> fileName <> " does not exist")
-                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_1
+                    Just contents -> do
+                        a <- answer2 (parse2 contents)
+                        a `shouldBe` ex2_1
             it "example 2" $ do
                 let fileName = "./ex2_2.txt"
                 mContents <-
@@ -94,7 +96,9 @@ main =
                 case mContents of
                     Nothing ->
                         pendingWith ("File " <> fileName <> " does not exist")
-                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_2
+                    Just contents -> do
+                        a <- answer2 (parse2 contents)
+                        a `shouldBe` ex2_2
             it "example 3" $ do
                 let fileName = "./ex2_3.txt"
                 mContents <-
@@ -106,7 +110,9 @@ main =
                 case mContents of
                     Nothing ->
                         pendingWith ("File " <> fileName <> " does not exist")
-                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_3
+                    Just contents -> do
+                        a <- answer2 (parse2 contents)
+                        a `shouldBe` ex2_3
             it "example 4" $ do
                 let fileName = "./ex2_4.txt"
                 mContents <-
@@ -118,7 +124,9 @@ main =
                 case mContents of
                     Nothing ->
                         pendingWith ("File " <> fileName <> " does not exist")
-                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_4
+                    Just contents -> do
+                        a <- answer2 (parse2 contents)
+                        a `shouldBe` ex2_4
             it "example 5" $ do
                 let fileName = "./ex2_5.txt"
                 mContents <-
@@ -130,4 +138,6 @@ main =
                 case mContents of
                     Nothing ->
                         pendingWith ("File " <> fileName <> " does not exist")
-                    Just contents -> answer2 (parse2 contents) `shouldBe` ex2_5
+                    Just contents -> do
+                        a <- answer2 (parse2 contents)
+                        a `shouldBe` ex2_5

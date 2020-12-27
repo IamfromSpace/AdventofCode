@@ -5,7 +5,7 @@ import Data.Set (fromList, member, null)
 import Lib
 import Prelude hiding (null)
 import System.Environment (getArgs)
-import System.IO (stderr, stdout, hPutStr, hPutStrLn)
+import System.IO (hPutStr, hPutStrLn, stderr, stdout)
 
 main :: IO ()
 main = do
@@ -21,7 +21,7 @@ main = do
         when (not pt2) $ putStr answerStr
     when pt2 $ do
         hPutStrLn stderr "part 2:"
-        let answerStr = show2 $ answer2 $ parse2 contents
+        answerStr <- show2 <$> (answer2 $ parse2 contents)
         hPutStr stderr answerStr
         hPutStr stderr "\n"
         when (not pt1) $ putStr answerStr
