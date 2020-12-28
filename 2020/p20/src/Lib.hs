@@ -446,7 +446,7 @@ answer2 (imgSize, ts)
                               all (\mp -> Set.member mp assembled) $
                               fmap ((<>) p) mon)
                          (Set.toList assembled))
-                (combosM monster)
+                (combosM (drop 1 monster))
     in length assembled - 15 * (length monsterCount)
 
 show1 :: Show _a => _a -> String
