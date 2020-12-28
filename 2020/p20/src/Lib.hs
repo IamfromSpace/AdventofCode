@@ -392,22 +392,22 @@ monster :: [Vector (Integer, Integer)]
 monster =
     fmap Vector $
     fmap
-        (\(x, y) -> (x * 2 + 1, y * 2 + 1))
-        [ (0, 1)
-        , (1, 0)
-        , (4, 0)
-        , (5, 1)
-        , (6, 1)
-        , (7, 0)
-        , (10, 0)
-        , (11, 1)
-        , (12, 1)
-        , (13, 0)
-        , (16, 0)
-        , (17, 1)
+        (\(x, y) -> (x * 2, y * 2))
+        [ (0, 0)
+        , (1, -1)
+        , (4, -1)
+        , (5, 0)
+        , (6, 0)
+        , (7, -1)
+        , (10, -1)
+        , (11, 0)
+        , (12, 0)
+        , (13, -1)
+        , (16, -1)
+        , (17, 0)
+        , (18, 0)
         , (18, 1)
-        , (18, 2)
-        , (19, 1)
+        , (19, 0)
         ]
 
 answer2 :: _ -> _
@@ -436,11 +436,6 @@ answer2 (imgSize, ts)
             Set.map
                 ((\(x, y) -> (-((x + 1) `div` 2), (y + 1) `div` 2)) . getVector) $
             assembled
-        monsterTestPoints =
-            App.liftA2
-                (\x y -> Vector (x, y))
-                [-1000 .. imgSize + 1000]
-                [-1000 .. imgSize + 1000]
         monsterCount =
             concat $
             Util.elmTrace $
@@ -450,7 +445,7 @@ answer2 (imgSize, ts)
                          (\p ->
                               all (\mp -> Set.member mp assembled) $
                               fmap ((<>) p) mon)
-                         monsterTestPoints)
+                         (Set.toList assembled))
                 (combosM monster)
     in length assembled - 15 * (length monsterCount)
 
