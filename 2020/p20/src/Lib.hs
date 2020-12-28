@@ -215,32 +215,6 @@ fill state =
            then state'
            else fill state'
 
-getGuesses ::
-       (Map Int [Tile], Map (Int, Int) (Int, Tile))
-    -> [((Int, Int), (Int, Tile))]
-getGuesses state@(_, known) =
-    let poi = getPoi known
-    in concatMap (\(p, os) -> fmap ((,) p) os) $
-       filter ((\len -> len > 1) . length . snd) $
-       fmap (\p -> (p, pointOptions p state)) poi
-
-solve ::
-       (Map Int [Tile], Map (Int, Int) (Int, Tile))
-    -> Maybe (Map (Int, Int) (Int, Tile))
-solve state =
-    let (unknown, known) = fill state
-    in if Map.size unknown == 0
-           then Just known
-           else let guesses = getGuesses (unknown, known)
-                in if length guesses == 0
-                       then Nothing
-                       else case Maybe.catMaybes $
-                                 fmap
-                                     (solve . flip accept (unknown, known))
-                                     guesses of
-                                (x:_) -> Just x
-                                _ -> Nothing
-
 hasPair :: Set Tile -> String -> Bool
 hasPair ts s =
     let rs = reverse s
@@ -261,11 +235,6 @@ findCorners :: [(Int, Tile)] -> [(Int, Tile)]
 findCorners ts =
     let asSet = Set.fromList $ fmap snd ts
     in filter (\(_, t) -> unpairedEdges (Set.delete t asSet) t >= 2) ts
-
-findEdges :: [(Int, Tile)] -> [(Int, Tile)]
-findEdges ts =
-    let asSet = Set.fromList $ fmap snd ts
-    in filter (\(_, t) -> unpairedEdges (Set.delete t asSet) t == 1) ts
 
 answer1 :: (_, [(Int, Tile)]) -> _
 answer1 = product . fmap fst . findCorners . snd
@@ -411,15 +380,7 @@ monster =
         ]
 
 answer2 :: _ -> _
-answer2 (imgSize, ts)
-    --Util.prettyPrintPointSet '#' '.' $
-    --Set.fromList $
-    --Map.keys $
-    --let i = 1
-    --in solve
-    --       ( fmap combos $ Map.fromList (take i t <> drop (i + 1) t)
-    --       , Map.fromList [((0, 0), t !! i)])
- =
+answer2 (imgSize, ts) =
     let corners = orientedCornerTiles ts
         edges = Map.fromList $ orientedEdgeTiles ts
         solvedPerimeter = solvePerimeter corners edges
@@ -431,14 +392,8 @@ answer2 (imgSize, ts)
                 (Map.keys edges <> fmap fst corners)
         arrangedTiles = snd $ fill (middlePieces, solvedPerimeter)
         assembled = assemble imgSize arrangedTiles
-        printedAssembly =
-            Util.prettyPrintPointSet '.' '#' $
-            Set.map
-                ((\(x, y) -> (-((x + 1) `div` 2), (y + 1) `div` 2)) . getVector) $
-            assembled
         monsterCount =
             concat $
-            Util.elmTrace $
             fmap
                 (\mon ->
                      filter
