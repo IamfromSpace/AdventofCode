@@ -379,6 +379,17 @@ monster =
         , (19, 0)
         ]
 
+listWithFirstTrue' :: [Bool] -> [Bool] -> [Bool]
+listWithFirstTrue' [] xs = xs
+listWithFirstTrue' xs [] = xs
+listWithFirstTrue' xs@(True:_) _ = xs
+listWithFirstTrue' _ xs@(True:_) = xs
+listWithFirstTrue' (False:t1) (False:t2) = False : listWithFirstTrue' t1 t2
+
+listWithFirstTrue :: [[Bool]] -> [Bool]
+listWithFirstTrue [] = []
+listWithFirstTrue (h:t) = listWithFirstTrue' h (listWithFirstTrue t)
+
 answer2 :: _ -> _
 answer2 (imgSize, ts) =
     let corners = orientedCornerTiles ts
@@ -393,16 +404,18 @@ answer2 (imgSize, ts) =
         arrangedTiles = snd $ fill (middlePieces, solvedPerimeter)
         assembled = assemble imgSize arrangedTiles
         monsterCount =
-            concat $
+            length $
+            filter id $
+            listWithFirstTrue $
             fmap
                 (\mon ->
-                     filter
+                     fmap
                          (\p ->
                               all (\mp -> Set.member mp assembled) $
                               fmap ((<>) p) mon)
                          (Set.toList assembled))
                 (combosM (drop 1 monster))
-    in length assembled - 15 * (length monsterCount)
+    in length assembled - length monster * monsterCount
 
 show1 :: Show _a => _a -> String
 show1 = show
