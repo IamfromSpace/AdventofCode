@@ -21,6 +21,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import Data.Monoid (Sum(..))
+import Data.Ratio (Ratio, (%))
 import Data.Sequence (Seq(..), (<|), (|>))
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
@@ -42,7 +43,9 @@ parseTileInfo s =
 -- 
 -- The Tile also stores its (unbordered) image data, but it does so only on odd
 -- integers, so that the grid can be rotated more easily around the origin.
-type Tile = ((String, String, String, String), Set (Vector (Integer, Integer)))
+type Tile
+     = ( (String, String, String, String)
+       , Set (Vector (Ratio Integer, Ratio Integer)))
 
 toValue :: String -> Int
 toValue =
@@ -67,8 +70,8 @@ parseTile s =
             if c == '#'
                 then Set.insert
                          (Vector
-                              ( x * 2 - (fromIntegral imgGridSize) + 1
-                              , y * 2 - (fromIntegral imgGridSize) + 1))
+                              ( x % 1 - (fromIntegral imgGridSize - 1) % 2
+                              , y % 1 - (fromIntegral imgGridSize - 1) % 2))
                          s
                 else s
     in ( fromIntegral imgGridSize
@@ -98,7 +101,7 @@ around ((e, n, w, s), img) =
     ( (reverse w, reverse s, reverse e, reverse n)
     , Set.map (Util.rotate (Util.left <> Util.left)) img)
 
-mirrorYV :: Vector (Integer, Integer) -> Vector (Integer, Integer)
+mirrorYV :: Num a => Vector (a, a) -> Vector (a, a)
 mirrorYV (Vector (x, y)) = Vector (-x, y)
 
 mirrorY :: Tile -> Tile
@@ -333,18 +336,20 @@ solvePerimeter (h:orientedCorners) orientedEdges =
     in Map.fromList (eastPoints <> southPoints <> westPoints <> northPoints)
 
 assemble ::
-       Integer -> Map (Int, Int) (Int, Tile) -> Set (Vector (Integer, Integer))
+       Integer
+    -> Map (Int, Int) (Int, Tile)
+    -> Set (Vector (Ratio Integer, Ratio Integer))
 assemble imgSize =
     Map.foldlWithKey
         (\s (x, y) (_, (_, img)) ->
              let offset =
                      Vector
-                         ( (imgSize * 2) * fromIntegral x
-                         , (imgSize * 2) * fromIntegral y)
+                         ( imgSize * fromIntegral x % 1
+                         , imgSize * fromIntegral y % 1)
              in List.foldr Set.insert s $ fmap ((<>) offset) $ Set.toList img)
         mempty
 
-combosM :: [Vector (Integer, Integer)] -> [[Vector (Integer, Integer)]]
+combosM :: Num a => [Vector (a, a)] -> [[Vector (a, a)]]
 combosM =
     sequence
         [ id
@@ -357,27 +362,25 @@ combosM =
         , fmap (Util.rotate (Util.left <> Util.left <> Util.left) . mirrorYV)
         ]
 
-monster :: [Vector (Integer, Integer)]
+monster :: Num a => [Vector (a, a)]
 monster =
     fmap Vector $
-    fmap
-        (\(x, y) -> (x * 2, y * 2))
-        [ (0, 0)
-        , (1, -1)
-        , (4, -1)
-        , (5, 0)
-        , (6, 0)
-        , (7, -1)
-        , (10, -1)
-        , (11, 0)
-        , (12, 0)
-        , (13, -1)
-        , (16, -1)
-        , (17, 0)
-        , (18, 0)
-        , (18, 1)
-        , (19, 0)
-        ]
+    [ (0, 0)
+    , (1, -1)
+    , (4, -1)
+    , (5, 0)
+    , (6, 0)
+    , (7, -1)
+    , (10, -1)
+    , (11, 0)
+    , (12, 0)
+    , (13, -1)
+    , (16, -1)
+    , (17, 0)
+    , (18, 0)
+    , (18, 1)
+    , (19, 0)
+    ]
 
 listWithFirstTrue' :: [Bool] -> [Bool] -> [Bool]
 listWithFirstTrue' [] xs = xs

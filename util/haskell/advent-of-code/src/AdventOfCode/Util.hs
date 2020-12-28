@@ -52,6 +52,7 @@ import Data.List.Split (chunksOf, splitOn)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, isNothing)
+import Data.Ratio (Ratio)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Debug.Trace (trace, traceShow)
@@ -87,7 +88,13 @@ instance Monoid (Vector Integer) where
 instance Semigroup (Vector (Integer, Integer)) where
     Vector (a0, a1) <> Vector (b0, b1) = Vector (a0 + b0, a1 + b1)
 
+instance Semigroup (Vector (Ratio Integer, Ratio Integer)) where
+    Vector (a0, a1) <> Vector (b0, b1) = Vector (a0 + b0, a1 + b1)
+
 instance Monoid (Vector (Integer, Integer)) where
+    mempty = Vector (0, 0)
+
+instance Monoid (Vector (Ratio Integer, Ratio Integer)) where
     mempty = Vector (0, 0)
 
 instance Semigroup (Vector (Integer, Integer, Integer)) where
