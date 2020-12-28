@@ -55,12 +55,13 @@ toValue =
 
 --parseGrid ::
 --       (Integral a, Num a) => ((a, a) -> Char -> b -> b) -> b -> String -> b
-parseTile :: [String] -> (Int, Tile)
+parseTile :: [String] -> (Integer, (Int, Tile))
 parseTile s =
     let (tile:grid) = s
         trans = List.transpose grid
         imgGridSize = length (head grid) - 2
         imgGrid =
+            reverse $
             take imgGridSize $ drop 1 $ fmap (take imgGridSize . drop 1) grid
         gridParser (x, y) c s =
             if c == '#'
@@ -70,12 +71,15 @@ parseTile s =
                               , y * 2 - (fromIntegral imgGridSize) + 1))
                          s
                 else s
-    in ( parseTileInfo tile
-       , ( (last trans, head grid, head trans, last grid)
-         , Util.parseGrid gridParser mempty (unlines imgGrid)))
+    in ( fromIntegral imgGridSize
+       , ( parseTileInfo tile
+         , ( (last trans, head grid, head trans, last grid)
+           , Util.parseGrid gridParser mempty (unlines imgGrid))))
 
-parse1 :: String -> [(Int, Tile)]
-parse1 = fmap parseTile . multiLines
+parse1 :: String -> (Integer, [(Int, Tile)])
+parse1 xs =
+    let ts = fmap parseTile $ multiLines xs
+    in (fst (head ts), fmap snd ts)
 
 parse2 :: String -> _
 parse2 = parse1
@@ -263,8 +267,8 @@ findEdges ts =
     let asSet = Set.fromList $ fmap snd ts
     in filter (\(_, t) -> unpairedEdges (Set.delete t asSet) t == 1) ts
 
-answer1 :: [(Int, Tile)] -> _
-answer1 = product . fmap fst . findCorners
+answer1 :: (_, [(Int, Tile)]) -> _
+answer1 = product . fmap fst . findCorners . snd
 
 unpairedEdgeIds :: Set Tile -> Tile -> [Int]
 unpairedEdgeIds ts t =
@@ -359,8 +363,55 @@ solvePerimeter (h:orientedCorners) orientedEdges =
             fmap (fmap left) northSide
     in Map.fromList (eastPoints <> southPoints <> westPoints <> northPoints)
 
+assemble ::
+       Integer -> Map (Int, Int) (Int, Tile) -> Set (Vector (Integer, Integer))
+assemble imgSize =
+    Map.foldlWithKey
+        (\s (x, y) (_, (_, img)) ->
+             let offset =
+                     Vector
+                         ( (imgSize * 2) * fromIntegral x
+                         , (imgSize * 2) * fromIntegral y)
+             in List.foldr Set.insert s $ fmap ((<>) offset) $ Set.toList img)
+        mempty
+
+combosM :: [Vector (Integer, Integer)] -> [[Vector (Integer, Integer)]]
+combosM =
+    sequence
+        [ id
+        , fmap (Util.rotate Util.left)
+        , fmap (Util.rotate (Util.left <> Util.left))
+        , fmap (Util.rotate (Util.left <> Util.left <> Util.left))
+        , fmap (mirrorYV)
+        , fmap (Util.rotate Util.left . mirrorYV)
+        , fmap (Util.rotate (Util.left <> Util.left) . mirrorYV)
+        , fmap (Util.rotate (Util.left <> Util.left <> Util.left) . mirrorYV)
+        ]
+
+monster :: [Vector (Integer, Integer)]
+monster =
+    fmap Vector $
+    fmap
+        (\(x, y) -> (x * 2 + 1, y * 2 + 1))
+        [ (0, 1)
+        , (1, 0)
+        , (4, 0)
+        , (5, 1)
+        , (6, 1)
+        , (7, 0)
+        , (10, 0)
+        , (11, 1)
+        , (12, 1)
+        , (13, 0)
+        , (16, 0)
+        , (17, 1)
+        , (18, 1)
+        , (18, 2)
+        , (19, 1)
+        ]
+
 answer2 :: _ -> _
-answer2 ts
+answer2 (imgSize, ts)
     --Util.prettyPrintPointSet '#' '.' $
     --Set.fromList $
     --Map.keys $
@@ -378,7 +429,30 @@ answer2 ts
                 (flip Map.delete)
                 (Map.fromList ts)
                 (Map.keys edges <> fmap fst corners)
-    in fmap fst $ snd $ fill (middlePieces, solvedPerimeter)
+        arrangedTiles = snd $ fill (middlePieces, solvedPerimeter)
+        assembled = assemble imgSize arrangedTiles
+        printedAssembly =
+            Util.prettyPrintPointSet '.' '#' $
+            Set.map
+                ((\(x, y) -> (-((x + 1) `div` 2), (y + 1) `div` 2)) . getVector) $
+            assembled
+        monsterTestPoints =
+            App.liftA2
+                (\x y -> Vector (x, y))
+                [-1000 .. imgSize + 1000]
+                [-1000 .. imgSize + 1000]
+        monsterCount =
+            concat $
+            Util.elmTrace $
+            fmap
+                (\mon ->
+                     filter
+                         (\p ->
+                              all (\mp -> Set.member mp assembled) $
+                              fmap ((<>) p) mon)
+                         monsterTestPoints)
+                (combosM monster)
+    in length assembled - 15 * (length monsterCount)
 
 show1 :: Show _a => _a -> String
 show1 = show
