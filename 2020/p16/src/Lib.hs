@@ -99,36 +99,39 @@ inputToValidCombos :: ([(String, Set Int)], [Int], [[Int]]) -> [[Int]]
 inputToValidCombos (rules, _, nearby) =
     toValidCombos (fmap snd rules) (List.transpose nearby)
 
--- left as is, but solved this by hand based on in a REPL:
--- @
--- inputToValidCombos (fields, x, filter (checkTicket2 (fmap snd fields)) nearby)
--- @
---
--- scratch includes the by hand result of finding the valid permutation from
--- that result
-answer2 :: ([(String, Set Int)], [Int], [[Int]]) -> _
-answer2 (fields, _, nearby) =
-    let columns =
-            List.transpose $ filter (checkTicket2 (fmap snd fields)) nearby
-        order =
-            head $
-            filter
-                (\ordering ->
-                     all id $
-                     List.zipWith
-                         (\(_, valid) is -> all (flip Set.member valid) is)
-                         ordering
-                         columns)
-                (List.permutations fields)
-    in fmap fst $ order
+acceptKnown :: Map Int (Either Int [Int]) -> Maybe (Map Int (Either Int [Int]))
+acceptKnown m =
+    case filter ((==) (Right 1) . fmap length . snd) (Map.toList m) of
+        [] -> Nothing
+        ((k, Right [v]):_) ->
+            Just $
+            fmap (either Left (Right . filter ((/=) v))) $
+            Map.insert k (Left v) m
 
-{-
-    head $
-    filter ((==) (List.length fields) . Set.size . Set.fromList) $
-    sequence $
+acceptKnownN ::
+       Int -> Map Int (Either Int [Int]) -> Maybe (Map Int (Either Int [Int]))
+acceptKnownN 0 m = Just m
+acceptKnownN n m = acceptKnown m >>= acceptKnownN (n - 1)
+
+-- This works when:
+--   a) There is exactly one valid permutation
+--   b) No two permutations have the same number of options (ex. [[0], [0,1], [0,1,2]])
+solvePermSpecial :: [[Int]] -> Maybe [Int]
+solvePermSpecial xs =
+    fmap (Either.lefts . Map.elems) $
+    acceptKnownN (length xs) $
+    Map.fromList $ zipWith (\a b -> (a, pure b)) [0 ..] xs
+
+answer2 :: ([(String, Set Int)], [Int], [[Int]]) -> _
+answer2 (fields, myTicket, nearby) =
+    product $
+    fmap ((!!) myTicket) $
+    take 6 $
+    Maybe.fromJust $
+    solvePermSpecial $
     inputToValidCombos
-        (fields, x, filter (checkTicket2 (fmap snd fields)) nearby)
--}
+        (fields, myTicket, filter (checkTicket2 (fmap snd fields)) nearby)
+
 show1 :: Show _a => _a -> String
 show1 = show
 
