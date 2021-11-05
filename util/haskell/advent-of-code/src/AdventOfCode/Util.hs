@@ -4,43 +4,60 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
+-- |
+--
+--  - [Parsing](#g:1)
+--  - [Printing](#g:2)
+--  - [Cycles](#g:3)
+--  - [Iteration](#g:4)
+--  - [Path Finding](#g:5)
+--  - [Geometry](#g:6)
+--  - [Misc](#g:7)
 module AdventOfCode.Util
-    ( aStar
-    , AStarStepOption(..)
-    , aStar2
-    , AStarStepOption2(..)
-    , explore
+    ( labelTrace
     , trace
     , traceShow
-    , elmTrace
-    , labelTrace
-    , manDist
-    , Manhattan
-    , R2
-    , left
-    , rotate
-    , upgrade
+      -- * Parsing
+    , multiLines
     , parseGrid
+      -- * Printing
+    , byteStringToHex
     , prettyPrintPointMap
     , prettyPrintPointMapFlippable
     , prettyPrintPointSet
     , prettyPrintPointSetFlippable
-    , byteStringToHex
+      -- * Cycles
+    , findCyclePeriod
+    , findCycle
+      -- * Iteration
     , applyNTimes
     , asCounted
     , boundedUntilWithCount
     , boundedUntil
-    , findCyclePeriod
-    , findCycle
-    , listToIndexMap
+      -- * Path Finding
+    , AStarStepOption2(..)
+    , aStar2
+    , explore
+      -- * Geometry
     , Vector(..)
-    , manLen
     , intoVector
+    , manLen
+    , R2
+    , left
+    , rotate
+    , upgrade
     , BoundingBox(..)
     , intoBoundingBox
     , isBoundedBy
     , area
-    , multiLines
+    -- * Misc
+    , listToIndexMap
+    -- * Deprecated
+    , manDist
+    , Manhattan
+    , AStarStepOption(..)
+    , aStar
+    , elmTrace
     ) where
 
 import Control.Applicative (liftA2)
