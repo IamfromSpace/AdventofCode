@@ -84,6 +84,11 @@ import GHC.Word (Word8)
 multiLines :: String -> [[String]]
 multiLines = splitOn [""] . lines
 
+-- | "Fold" over a string draws a 2D grid with characters.  This is useful for
+-- parsing mazes or games of life or etc.
+--
+-- >>> parseGrid (\p c -> if c == '#' then Set.insert else id) " # #\n# # \n"
+-- Set.fromList [(0,1), (0,3), (1,0), (1,2)]
 parseGrid ::
        (Integral a, Num a) => ((a, a) -> Char -> b -> b) -> b -> String -> b
 parseGrid f init s =
@@ -92,6 +97,8 @@ parseGrid f init s =
         go (x, y) fn r [] = r
     in go (0, 0) f init (lines s)
 
+-- | Vector is a general type for getting common behaviors across vectors of
+-- arbitary dimensions.
 newtype Vector a = Vector
     { getVector :: a
     } deriving (Show, Ord, Eq)
@@ -379,16 +386,26 @@ byteStringToHex :: ByteString -> String
 byteStringToHex = concatMap word8ToHex . unpack
 
 -- I just never rememeber this syntax ><
--- Repeatedly apply a function it's result n times
+-- | Repeatedly apply a function its result n times
+--
+-- >>> applyNTimes ((+) 2) 0 5
+-- 10
 applyNTimes :: (a -> a) -> a -> Integer -> a
 applyNTimes fn init n = iterate fn init !! fromIntegral n
 
--- Take a function, and then have it count its iterations
+-- | Take a function, and then have it count its iterations
+--
+-- >>> asCounted ((+) 2) (0, 4)
+-- (1, 6)
 asCounted :: (a -> a) -> ((Integer, a) -> (Integer, a))
 asCounted fn (i, a) = (i + 1, fn a)
 
--- Run a function repeatedly until a predicate is met, but throw an error if
--- more than a specified nnumber of iterations is run.  Also, the count is returned.
+-- | Run a function repeatedly until a predicate is met, but throw an error if
+-- more than a specified number of iterations is run.  Also, the count is
+-- returned.
+--
+-- >>> boundedUntilWithCount 1000 (> 10) ((+) 2) 0
+-- (5, 12)
 boundedUntilWithCount :: Integer -> (a -> Bool) -> (a -> a) -> a -> (Integer, a)
 boundedUntilWithCount max pred fn x =
     if max <= 0
@@ -399,12 +416,15 @@ boundedUntilWithCount max pred fn x =
                     then error "Too many iterations!"
                     else (iterations, last)
 
--- Run a function repeatedly until a predicate is met, but throw an error if
+-- | Run a function repeatedly until a predicate is met, but throw an error if
 -- more than a specified nnumber of iterations is run.
+--
+-- >>> boundedUntil 1000 (> 10) ((+) 2) 0
+-- 12
 boundedUntil :: Integer -> (a -> Bool) -> (a -> a) -> a -> a
 boundedUntil max pred fn = snd . boundedUntilWithCount max pred fn
 
--- Find the period of a cycle (Brent's Algorithm pt1)
+-- | Find the period of a cycle (Brent's Algorithm pt1)
 findCyclePeriod :: Eq a => (a -> a) -> a -> Integer
 findCyclePeriod fn init = go 1 1 (fn init) fn init
   where
@@ -415,7 +435,7 @@ findCyclePeriod fn init = go 1 1 (fn init) fn init
                      then go (pow * 2) 1 (fn hare) fn hare
                      else go pow (guess + 1) (fn hare) fn tort
 
--- Find the start, period, first value of a cycle (Brent's Algorithm pt1/2)
+-- | Find the start, period, first value of a cycle (Brent's Algorithm pt1/2)
 findCycle :: Eq a => (a -> a) -> a -> (Integer, Integer, a)
 findCycle fn init =
     let period = findCyclePeriod fn init
@@ -427,9 +447,17 @@ findCycle fn init =
                 (0, (init, hare))
     in (firstIndex, period, firstValue)
 
+-- | Note: this isn't actually how elm's debug works
 elmTrace :: Show a => a -> a
 elmTrace x = traceShow x x
 
+-- | Print out both a label and the item being traced.  This is notably similar
+-- to how elm's debug works, it's just that `elmTrace` accidentally took the
+-- name with an incorrect impl.
+--
+-- >>> labelTrace "tag" 45
+-- ("tag", 45)
+-- 45
 labelTrace :: Show a => String -> a -> a
 labelTrace label x = traceShow (label, x) x
 
@@ -567,18 +595,33 @@ aStar getOptions pInit =
         (iterateWhile isNothing (aStarStep getOptions))
         (Nothing, mempty, Set.singleton (mempty, pInit, []))
 
+-- | Generic representation of possible step we could take when exploring a
+-- discretely divided space
 data AStarStepOption2 a b = AStarStepOption2
-    { position :: a
-    , stepCost :: b
+    { position :: a -- ^ The new position, if the option is taken
+    , stepCost :: b -- ^ How much it costs to accept this option
     } deriving (Show)
 
 -- Ideally we would implement aStarStep in terms of this impl, but we can't upgrade, only downgrade.  We keep around the others for compatibility.  It would be nice to just publish this as a package so that it could be version managed.
+-- | The A* algorithm.  This is essentially a depth first search with a
+-- priority queue based on a huristic for guessing the lowest cost to win.
+--
+-- This particular approach is highly generic, allowing almost anything to
+-- operate as a position or a cost.
+--
+-- >>> aStar2 (\p -> abs (p - 3)) (\p -> [AStarStepOption2 (p-1) 1, AStarStepOption2 (p+1) 1]) 0
+-- >>> Just (3, [0,1,2,3])
+--
+-- In this example above, we are simply solving walking a number line from 0
+-- towards a goal state of 3.  We never explore the negative direction, because
+-- it always looks unattractive (and our hueristic for a lower bound can be
+-- optimal here).
 aStar2 ::
        (Ord cost, Ord position, Monoid cost)
-    => (position -> cost)
-    -> (position -> [AStarStepOption2 position cost])
-    -> position
-    -> Maybe (cost, [position])
+    => (position -> cost) -- ^ Compute the lowest possible known cost to arrive at a goal state from any other position.  All goal states should simply return mempty (typically 0).  Ideally, this is given as tightly as possible, this cost is ever _over_ estimated, the algorithm will be wrong.
+    -> (position -> [AStarStepOption2 position cost]) -- ^ All possible steps one could take from a given position
+    -> position -- ^ The starting position
+    -> Maybe (cost, [position]) -- ^ If successful, the lowest possible cost and (one of) the lowest costs path(s) to get there
 aStar2 getLowerBoundCost getOptions pInit =
     fromJust $
     evalState
