@@ -27,8 +27,10 @@ library:
   - bytestring
   - split
   - containers
+  - cryptohash-md5
   - monad-loops
   - mtl
+  - text
 
 tests:
   advent-of-code-test:

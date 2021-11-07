@@ -8,11 +8,12 @@
 --
 --  - [Parsing](#g:1)
 --  - [Printing](#g:2)
---  - [Cycles](#g:3)
---  - [Iteration](#g:4)
---  - [Path Finding](#g:5)
---  - [Geometry](#g:6)
---  - [Misc](#g:7)
+--  - [Hashing](#g:3)
+--  - [Cycles](#g:4)
+--  - [Iteration](#g:5)
+--  - [Path Finding](#g:6)
+--  - [Geometry](#g:7)
+--  - [Misc](#g:8)
 module AdventOfCode.Util
     ( labelTrace
     , trace
@@ -26,6 +27,8 @@ module AdventOfCode.Util
     , prettyPrintPointMapFlippable
     , prettyPrintPointSet
     , prettyPrintPointSetFlippable
+      -- * Hashing
+    , xmasHash
       -- * Cycles
     , findCyclePeriod
     , findCycle
@@ -63,6 +66,7 @@ module AdventOfCode.Util
 import Control.Applicative (liftA2)
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
+import qualified Crypto.Hash.MD5 as MD5
 import Data.ByteString (ByteString, unpack)
 import Data.List (foldl', partition, sortOn)
 import Data.List.Split (chunksOf, splitOn)
@@ -72,6 +76,8 @@ import Data.Maybe (fromJust, fromMaybe, isNothing)
 import Data.Ratio (Ratio)
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Text (pack)
+import Data.Text.Encoding (encodeUtf8)
 import Debug.Trace (trace, traceShow)
 import GHC.Word (Word8)
 
@@ -683,3 +689,11 @@ explore maxCost getOptions pInit =
     evalState
         (iterateWhile isNothing (exploreStep maxCost getOptions))
         (mempty, Set.singleton (mempty, pInit))
+
+-- | Common hashing approach in 2016 problems where we want the hex
+-- representation as a string out.
+--
+-- >>> xmasHash "A string!"
+-- "a429311125de36d0beb338ab6d509404"
+xmasHash :: String -> String
+xmasHash = byteStringToHex . MD5.hash . encodeUtf8 . pack
