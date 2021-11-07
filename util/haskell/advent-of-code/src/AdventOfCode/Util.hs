@@ -616,6 +616,11 @@ data AStarStepOption2 a b = AStarStepOption2
 -- towards a goal state of 3.  We never explore the negative direction, because
 -- it always looks unattractive (and our hueristic for a lower bound can be
 -- optimal here).
+--
+-- For /longest/ path finding:
+--
+--   - invert your cost (ex. 0 - cost)
+--   - set goal function to -Inf when not at goal state and 0 when at a goal state (unless you can come up with a tighter worst case bound)
 aStar2 ::
        (Ord cost, Ord position, Monoid cost)
     => (position -> cost) -- ^ Compute the lowest possible known cost to arrive at a goal state from any other position.  All goal states should simply return mempty (typically 0).  Ideally, this is given as tightly as possible, this cost is ever _over_ estimated, the algorithm will be wrong.
@@ -666,12 +671,13 @@ exploreStep maxCost getOptions = do
                     newSearchNodes
             return Nothing
 
+-- | Find all possible paths, with or without (a) goal state(s)
 explore ::
        (Ord cost, Ord position, Monoid cost)
-    => cost
-    -> (position -> [AStarStepOption2 position cost])
-    -> position
-    -> Map position cost
+    => cost -- ^ The maximum cost you're willing to consider
+    -> (position -> [AStarStepOption2 position cost]) -- ^ Next step function (same as `aStar2`).  If a goal state is reached this should return [] or certain explorations will walk indefinitely.
+    -> position -- ^ Starting position
+    -> Map position cost -- ^ All positions discovered + the minimum cost to achieve the position from the starting state
 explore maxCost getOptions pInit =
     fromJust $
     evalState
