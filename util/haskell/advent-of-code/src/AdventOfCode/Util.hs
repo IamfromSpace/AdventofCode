@@ -21,6 +21,7 @@ module AdventOfCode.Util
       -- * Parsing
     , multiLines
     , parseGrid
+    , runPA
       -- * Printing
     , byteStringToHex
     , prettyPrintPointMap
@@ -80,6 +81,18 @@ import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Debug.Trace (trace, traceShow)
 import GHC.Word (Word8)
+import Text.ParserCombinators.PArrow (MD)
+import qualified Text.ParserCombinators.PArrow as PA
+
+-- | This runs a PArrow parser against a string, returning the successful
+-- result.  THIS IS IMPURE and will throw an error if the input is not accepted
+-- by the parser.  This is useful for AoC, where inputs are always well behaved
+-- and never fail.
+--
+-- >>> runP (sepBy1 (many1 digit >>> arr read) (char ',')) "123,456,789"
+-- [123, 456, 789]
+runPA :: MD String a -> String -> a
+runPA p = either (error . concat) id . PA.runParser p
 
 -- | This tries to act much like the base function 'lines' but for data that
 -- uses _two_ newlines to separate grouped data.  So instead of ending up with
