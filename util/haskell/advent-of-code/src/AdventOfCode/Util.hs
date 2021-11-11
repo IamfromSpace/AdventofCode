@@ -13,7 +13,8 @@
 --  - [Iteration](#g:5)
 --  - [Path Finding](#g:6)
 --  - [Geometry](#g:7)
---  - [Misc](#g:8)
+--  - [Testing](#g:8)
+--  - [Misc](#g:9)
 module AdventOfCode.Util
     ( labelTrace
     , trace
@@ -56,6 +57,8 @@ module AdventOfCode.Util
     , area
     -- * Misc
     , listToIndexMap
+    -- * Testing
+    , autoFileTest
     -- * Deprecated
     , manDist
     , Manhattan
@@ -65,6 +68,7 @@ module AdventOfCode.Util
     ) where
 
 import Control.Applicative (liftA2)
+import Control.Exception (catch, throw)
 import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import qualified Crypto.Hash.MD5 as MD5
@@ -81,6 +85,8 @@ import Data.Text (pack)
 import Data.Text.Encoding (encodeUtf8)
 import Debug.Trace (trace, traceShow)
 import GHC.Word (Word8)
+import System.IO.Error (IOError, isDoesNotExistError)
+import Test.Hspec (pendingWith, shouldBe)
 import Text.ParserCombinators.PArrow (MD)
 import qualified Text.ParserCombinators.PArrow as PA
 
@@ -710,3 +716,20 @@ explore maxCost getOptions pInit =
 -- "a429311125de36d0beb338ab6d509404"
 xmasHash :: String -> String
 xmasHash = byteStringToHex . MD5.hash . encodeUtf8 . pack
+
+-- | Create a test that is enabled only if the expected file with the input
+-- string is present
+--
+-- >>> hspec $ it "auto skipped" $ autoFileTest id "./input.txt" "the contents of the file"
+-- auto skipped
+--   # PENDING: File ./input.txt does not exist
+autoFileTest f fileName expected = do
+    mContents <-
+        (Just <$> readFile fileName) `catch`
+        (\e ->
+             if isDoesNotExistError e
+                 then return Nothing
+                 else throw (e :: IOError))
+    case mContents of
+        Nothing -> pendingWith ("File " <> fileName <> " does not exist")
+        Just contents -> f contents `shouldBe` expected

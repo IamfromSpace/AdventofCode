@@ -29,6 +29,7 @@ library:
   - split
   - containers
   - cryptohash-md5
+  - hspec
   - monad-loops
   - mtl
   - text
