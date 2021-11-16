@@ -8,7 +8,7 @@
 -- missing convenience of do notation via proc notation.
 --
 -- == Arrow Proc Notation
--- 
+--
 -- In general, the most ergonomic way to construct parsers is to use arrow proc
 -- notation, which will figure out the right string of arrow operators for you.
 -- Most parsers (but not all) don't have meaningful inputs, so as a slight
@@ -105,7 +105,6 @@
 --
 -- Operators like `+++` and `|||` seem best left to proc notation's if/else and
 -- case expressions, as they are dramatically more intuitive.
---
 module AdventOfCode.ArrowParser
   ( AP,
     APError (..),
@@ -150,26 +149,26 @@ data APError t
   = UnexpectedEndOfInput
   | NoOptionsMatch
   | UnexpectedToken t
-  -- | A `DeadEnd` is a special case of `NoOptionsMatch`, where no options were
-  -- even presented.  This is triggered specifically via `zeroArrow`.  If `<+>`
-  -- is akin to `<>`, then `zeroArrow` is akin to `mempty`.  The `mempty`
-  -- instance of this parser is zero options (a dead end), and the parser must
-  -- fail.  The way that options work, this satisfies a `mempty`, in that it
-  -- has no effect, because failure just moves on to the next option.  As an
-  -- example, all three of the following are equivalent:
-  --
-  -- @
-  -- zeroArrow \<+\> p
-  -- @
-  -- @
-  -- p \<+\> zeroArrow
-  -- @
-  -- @
-  -- p
-  -- @
-  --
-  -- This is useful in certain combinators like `notFollowedBy`.
-  | DeadEnd
+  | -- | A `DeadEnd` is a special case of `NoOptionsMatch`, where no options were
+    -- even presented.  This is triggered specifically via `zeroArrow`.  If `<+>`
+    -- is akin to `<>`, then `zeroArrow` is akin to `mempty`.  The `mempty`
+    -- instance of this parser is zero options (a dead end), and the parser must
+    -- fail.  The way that options work, this satisfies a `mempty`, in that it
+    -- has no effect, because failure just moves on to the next option.  As an
+    -- example, all three of the following are equivalent:
+    --
+    -- @
+    -- zeroArrow \<+\> p
+    -- @
+    -- @
+    -- p \<+\> zeroArrow
+    -- @
+    -- @
+    -- p
+    -- @
+    --
+    -- This is useful in certain combinators like `notFollowedBy`.
+    DeadEnd
   deriving (Show)
 
 -- | Generic type for a parser, where t is the token type.
