@@ -101,7 +101,7 @@
 -- combined via `<+>`).
 --
 -- >>> parse zeroArrow ""
--- Left (0, ForcedFailure)
+-- Left (0, DeadEnd)
 --
 -- Operators like `+++` and `|||` seem best left to proc notation's if/else and
 -- case expressions, as they are dramatically more intuitive.
@@ -150,7 +150,26 @@ data APError t
   = UnexpectedEndOfInput
   | NoOptionsMatch
   | UnexpectedToken t
-  | ForcedFailure
+  -- | A `DeadEnd` is a special case of `NoOptionsMatch`, where no options were
+  -- even presented.  This is triggered specifically via `zeroArrow`.  If `<+>`
+  -- is akin to `<>`, then `zeroArrow` is akin to `mempty`.  The `mempty`
+  -- instance of this parser is zero options (a dead end), and the parser must
+  -- fail.  The way that options work, this satisfies a `mempty`, in that it
+  -- has no effect, because failure just moves on to the next option.  As an
+  -- example, all three of the following are equivalent:
+  --
+  -- @
+  -- zeroArrow \<+\> p
+  -- @
+  -- @
+  -- p \<+\> zeroArrow
+  -- @
+  -- @
+  -- p
+  -- @
+  --
+  -- This is useful in certain combinators like `notFollowedBy`.
+  | DeadEnd
   deriving (Show)
 
 -- | Generic type for a parser, where t is the token type.
@@ -169,7 +188,7 @@ instance Arrow (AP t) where
     AP (\(s, i, (a, c)) -> (\(i', b) -> (i', (b, c))) <$> f (s, i, a))
 
 instance ArrowZero (AP t) where
-  zeroArrow = AP (\(_, i, _) -> Left (i, ForcedFailure))
+  zeroArrow = AP (\(_, i, _) -> Left (i, DeadEnd))
 
 instance ArrowPlus (AP t) where
   (runAP -> f) <+> (runAP -> g) =
@@ -440,7 +459,12 @@ count p = proc (i, a) -> do
 -- Right ()
 --
 -- >>> parse (notFollowedBy (token 'a')) "a"
--- Left (0, ForcedFailure)
+-- Left (0, DeadEnd)
+--
+-- This parser uses the `DeadEnd` error, because it leverages `zeroArrow` to
+-- trigger failure.  At a high level, this parser works by sequencing a
+-- `zeroArrow` after the supplied parser, so that if it matches it will
+-- encounter the `DeadEnd` and fail.
 notFollowedBy :: AP t a b -> AP t a ()
 notFollowedBy p = proc a -> do
   didMatch <- (p >>^ const True) <+> arr (const False) -< a
