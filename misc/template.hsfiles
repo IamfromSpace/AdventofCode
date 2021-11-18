@@ -19,7 +19,6 @@ dependencies:
   - lens
   - monad-loops
   - mtl
-  - PArrows
   - split
   - text
   - utf8-string
@@ -105,12 +104,13 @@ main = hspec $ parallel tests
 {-# START_FILE src/Lib.hs #-}
 module Lib where
 
+import AdventOfCode.ArrowParser (APC, (!>>), (>>!))
+import qualified AdventOfCode.ArrowParser as AP
 import AdventOfCode.Util (multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
-import Control.Arrow
-       ((&&&), (***), (<+>), (<<<), (>>>), (|||), arr)
+import Control.Arrow ((&&&), (***), (<+>), (<<<), (>>>), (>>^), (|||), arr)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
@@ -133,8 +133,6 @@ import Data.String (fromString)
 import qualified Data.Set as Set
 import Prelude hiding ((++), init, lookup, map)
 import Test.Hspec (describe, it, shouldBe)
-import Text.ParserCombinators.PArrow (MD, (>>!))
-import qualified Text.ParserCombinators.PArrow as PA
 import Text.Read (readMaybe)
 
 parse1 :: String -> _
