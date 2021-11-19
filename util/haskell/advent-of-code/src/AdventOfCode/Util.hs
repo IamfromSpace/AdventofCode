@@ -618,7 +618,9 @@ aStar getOptions pInit =
     fromJust $
     evalState
         (iterateWhile isNothing (aStarStep getOptions))
-        (Nothing, mempty, Set.singleton (mempty, pInit, []))
+        -- If we start in the solved state, there's no way to notice this, and
+        -- the result will be wrong.  Use aStar2.
+        (Nothing, Map.singleton pInit mempty, Set.singleton (mempty, pInit, []))
 
 -- | Generic representation of possible step we could take when exploring a
 -- discretely divided space
@@ -665,7 +667,11 @@ aStar2 getLowerBoundCost getOptions pInit =
                                 stepCost
                                 (getLowerBoundCost position)) .
                    getOptions)))
-        (Nothing, mempty, Set.singleton (mempty, pInit, []))
+        ( if getLowerBoundCost pInit == mempty
+              then Just (mempty, [pInit])
+              else Nothing
+        , Map.singleton pInit mempty
+        , Set.singleton (mempty, pInit, []))
 
 exploreStep ::
        (Ord cost, Monoid cost, Ord position)
