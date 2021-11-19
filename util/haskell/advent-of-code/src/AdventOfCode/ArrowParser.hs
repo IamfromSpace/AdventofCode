@@ -134,6 +134,7 @@ module AdventOfCode.ArrowParser
     digit,
     string,
     linesOf,
+    linesOf',
   )
 where
 
@@ -513,5 +514,39 @@ linesOf p =
         >>! (arr (const ()) >>> end)
     )
       >>! (const () ^>> end)
+  )
+    >>^ (\(a, b) -> a <> maybe [] pure b)
+
+-- | A lenient version of `linesOf`.
+--
+-- A combinator that given a particular parser, matches many times as separated
+-- by newlines.  This is like `sepBy1`, but acts more like the Prelude `lines`
+-- function, where a trailing newline is optional. This version is more lenient
+-- than `linesOf`, in that it will automatically throw away any excess
+-- characters between the end of the parser and the next newline.  Still, be
+-- cautious not to match a `'\n'` or it will not treat each line separately.
+--
+-- Notice how extra 'a's are always ignored here (vs `linesOf`):
+--
+-- >>> parse (linesOf' (token 'a')) "aaa"
+-- Right "a"
+--
+-- >>> parse (linesOf' (token 'a')) "aaa\n"
+-- Right "a"
+--
+-- >>> parse (linesOf' (token 'a')) "aaa\naaa\n"
+-- Right "aa"
+--
+-- >>> parse (linesOf' (token 'a')) "aaa\naaa\naaa"
+-- Right "aaa"
+--
+-- >>> parse (linesOf' (token 'a') &&& (token '-' !>> token 'b')) "a\na\na-b"
+-- Right ("aaa", 'b')
+linesOf' :: APC a b -> APC a [b]
+linesOf' p =
+  ( ( many
+        (p >>! (const () ^>> (many (tokenIs (not . (==) '\n')) !>> token '\n')))
+    )
+      &&& optional p
   )
     >>^ (\(a, b) -> a <> maybe [] pure b)
