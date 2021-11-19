@@ -635,7 +635,7 @@ data AStarStepOption2 a b = AStarStepOption2
 -- operate as a position or a cost.
 --
 -- >>> aStar2 (\p -> abs (p - 3)) (\p -> [AStarStepOption2 (p-1) 1, AStarStepOption2 (p+1) 1]) 0
--- >>> Just (3, [0,1,2,3])
+-- Just (3, [0,1,2,3])
 --
 -- In this example above, we are simply solving walking a number line from 0
 -- towards a goal state of 3.  We never explore the negative direction, because
