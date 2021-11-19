@@ -707,7 +707,7 @@ explore maxCost getOptions pInit =
     fromJust $
     evalState
         (iterateWhile isNothing (exploreStep maxCost getOptions))
-        (mempty, Set.singleton (mempty, pInit))
+        (Map.singleton pInit mempty, Set.singleton (mempty, pInit))
 
 -- | Common hashing approach in 2016 problems where we want the hex
 -- representation as a string out.
