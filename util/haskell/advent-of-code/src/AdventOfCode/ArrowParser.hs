@@ -137,7 +137,7 @@ module AdventOfCode.ArrowParser
   )
 where
 
-import Control.Arrow (Arrow (..), ArrowChoice (..), ArrowPlus (..), ArrowZero (..), returnA, (>>>), (>>^))
+import Control.Arrow (Arrow (..), ArrowChoice (..), ArrowPlus (..), ArrowZero (..), returnA, (>>>), (>>^), (^>>))
 import Control.Category (Category (..))
 import Data.Foldable (Foldable (..))
 import Data.Sequence (Seq)
@@ -486,7 +486,10 @@ string = foldable
 -- | A combinator that given a particular parser, matches many times as
 -- separated by newlines.  This is like `sepBy1`, but acts more like the
 -- Prelude `lines` function, where a trailing newline is optional. Caution, the
--- parser must match the entire line and must never match '\n'!
+-- parser must match the entire line and must never match '\n'!  Also, just as
+-- each line must match entirely, this combinator has an implicit end, to
+-- ensure that the last line is also consumed in entirety.  Consider `linesOf'`
+-- if you want more lienient behavior.
 --
 -- >>> parse (linesOf (token 'a')) "a"
 -- Right "a"
@@ -499,11 +502,16 @@ string = foldable
 --
 -- >>> parse (linesOf (token 'a')) "a\naa\n"
 -- Left (3, UnexpectedToken 'a')
+--
+-- >>> parse (linesOf (token 'a')) "a\na\naa"
+-- Left (5, UnexpectedToken 'a')
 linesOf :: APC a b -> APC a [b]
 linesOf p =
-  ( ( many (p >>! (arr (const ()) >>> token '\n'))
-        &&& optional p
+  ( ( ( many (p >>! (arr (const ()) >>> token '\n'))
+          &&& optional p
+      )
+        >>! (arr (const ()) >>> end)
     )
-      >>! (arr (const ()) >>> end)
+      >>! (const () ^>> end)
   )
     >>^ (\(a, b) -> a <> maybe [] pure b)
