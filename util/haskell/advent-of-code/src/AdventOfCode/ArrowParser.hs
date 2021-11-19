@@ -508,12 +508,10 @@ string = foldable
 -- Left (5, UnexpectedToken 'a')
 linesOf :: APC a b -> APC a [b]
 linesOf p =
-  ( ( ( many (p >>! (arr (const ()) >>> token '\n'))
-          &&& optional p
-      )
-        >>! (arr (const ()) >>> end)
+  ( ( many (p >>! (arr (const ()) >>> token '\n'))
+        &&& optional p
     )
-      >>! (const () ^>> end)
+      >>! (arr (const ()) >>> end)
   )
     >>^ (\(a, b) -> a <> maybe [] pure b)
 
