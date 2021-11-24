@@ -23,6 +23,7 @@ dependencies:
   - utf8-string
 
 default-extensions:
+  - Arrows
   - BangPatterns
   - BinaryLiterals
   - DeriveFoldable

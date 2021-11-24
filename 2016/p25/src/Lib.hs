@@ -8,6 +8,7 @@ import Control.Applicative (pure, (<*>), (<|>))
 import qualified Control.Applicative as App
 import Control.Arrow
   ( arr,
+    returnA,
     (&&&),
     (***),
     (<+>),
@@ -58,41 +59,57 @@ data Inst
   | Out Char
   deriving (Show, Eq)
 
-parse1 :: string -> _
-parse1 =
-  const $
-    Seq.fromList
-      [ Copy (Reg 'a') (Reg 'd'),
-        Copy (Val 11) (Reg 'c'),
-        Copy (Val 231) (Reg 'b'),
-        Inc 'd',
-        Dec 'b',
-        JumpNotZero (Reg 'b') (Val (-2)),
-        Dec 'c',
-        JumpNotZero (Reg 'c') (Val (-5)),
-        Copy (Reg 'd') (Reg 'a'),
-        JumpNotZero (Val 0) (Val 0),
-        Copy (Reg 'a') (Reg 'b'),
-        Copy (Val 0) (Reg 'a'),
-        Copy (Val 2) (Reg 'c'),
-        JumpNotZero (Reg 'b') (Val 2),
-        JumpNotZero (Val 1) (Val 6),
-        Dec 'b',
-        Dec 'c',
-        JumpNotZero (Reg 'c') (Val (-4)),
-        Inc 'a',
-        JumpNotZero (Val 1) (Val (-7)),
-        Copy (Val 2) (Reg 'b'),
-        JumpNotZero (Reg 'c') (Val 2),
-        JumpNotZero (Val 1) (Val 4),
-        Dec 'b',
-        Dec 'c',
-        JumpNotZero (Val 1) (Val (-4)),
-        JumpNotZero (Val 0) (Val 0),
-        Out 'b',
-        JumpNotZero (Reg 'a') (Val (-19)),
-        JumpNotZero (Val 1) (Val (-21))
-      ]
+pInt :: APC () Int
+pInt =
+  (AP.optional (AP.token '-') &&& AP.many1 AP.digit)
+    >>^ (\(a, b) -> read (maybe [] pure a <> b))
+
+pX :: APC () X
+pX = (pInt >>^ Val) <+> (AP.anyToken >>^ Reg)
+
+pCopy :: APC () Inst
+pCopy = proc () -> do
+  _ <- AP.string "cpy " -< ()
+  a <- pX -< ()
+  _ <- AP.token ' ' -< ()
+  b <- pX -< ()
+  returnA -< Copy a b
+
+pDec :: APC () Inst
+pDec = proc () -> do
+  _ <- AP.string "dec " -< ()
+  a <- AP.anyToken -< ()
+  returnA -< Dec a
+
+pInc :: APC () Inst
+pInc = proc () -> do
+  _ <- AP.string "inc " -< ()
+  a <- AP.anyToken -< ()
+  returnA -< Inc a
+
+pJumpNotZero :: APC () Inst
+pJumpNotZero = proc () -> do
+  _ <- AP.string "jnz " -< ()
+  a <- pX -< ()
+  _ <- AP.token ' ' -< ()
+  b <- pX -< ()
+  returnA -< JumpNotZero a b
+
+pOut :: APC () Inst
+pOut = proc () -> do
+  _ <- AP.string "out " -< ()
+  a <- AP.anyToken -< ()
+  returnA -< Out a
+
+pInst :: APC () Inst
+pInst = pCopy <+> pDec <+> pInc <+> pJumpNotZero <+> pOut
+
+pProg :: APC () (Seq Inst)
+pProg = AP.linesOf pInst >>^ Seq.fromList
+
+parse1 :: String -> _
+parse1 = either (error . show) id . AP.parse pProg
+
 
 parse2 :: String -> _
 parse2 = parse1
