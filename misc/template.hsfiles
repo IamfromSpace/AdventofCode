@@ -24,6 +24,7 @@ dependencies:
   - utf8-string
 
 default-extensions:
+  - Arrows
   - BangPatterns
   - BinaryLiterals
   - DeriveFoldable
@@ -110,7 +111,7 @@ import AdventOfCode.Util (multiLines)
 import qualified AdventOfCode.Util as Util
 import Control.Applicative ((<*>), (<|>), pure)
 import qualified Control.Applicative as App
-import Control.Arrow ((&&&), (***), (<+>), (<<<), (>>>), (>>^), (|||), arr)
+import Control.Arrow ((&&&), (***), (<+>), (<<<), (>>>), (>>^), (|||), arr, returnA)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
