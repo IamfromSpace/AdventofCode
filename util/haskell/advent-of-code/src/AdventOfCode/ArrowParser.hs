@@ -110,6 +110,7 @@ module AdventOfCode.ArrowParser
     APError (..),
     APC,
     parse,
+    parseImpure,
 
     -- * Parser Creators
     token,
@@ -196,6 +197,11 @@ instance ArrowPlus (AP t) where
       ( \x@(_, i, _) ->
           case f x of
             Right x -> Right x
+            -- TODO: consider only proceeding if we didn't advance (which
+            -- guarantees LL(1)).
+            -- TODO: Wthout an error "stack" (or backtracking being disallowed)
+            -- this actually can be pretty confusing to not see the "deepest"
+            -- error.
             Left e1 -> case (g x) of
               Right y -> Right y
               Left e2 -> Left (i, NoOptionsMatch)
@@ -231,6 +237,9 @@ type APC = AP Char
 -- Left (1, UnexpectedToken 'a')
 parse :: Foldable f => AP t () a -> f t -> Either (Int, APError t) a
 parse (runAP -> f) s = snd <$> f (Seq.fromList $ toList s, 0, ())
+
+parseImpure :: Foldable f => Show t => AP t () a -> f t -> a
+parseImpure p s = either (\(i, e) -> error ("Parse error " <> show e <> " at position " <> show i <> ": " <> (show (take 100 $ drop i $ toList s)))) id $ parse p s
 
 -- | A parser that accepts any token that satisfies the predicate.
 --
