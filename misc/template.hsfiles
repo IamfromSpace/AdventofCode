@@ -120,7 +120,7 @@ import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
 import qualified Data.Either as Either
-import Data.Foldable (toList)
+import Data.Foldable (fold, toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
 import Data.Monoid (Sum(..))
@@ -132,7 +132,7 @@ import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import Data.String (fromString)
 import qualified Data.Set as Set
-import Prelude hiding ((++), init, lookup, map)
+import Prelude hiding (foldr, (++), init, lookup, map)
 import Test.Hspec (describe, it, shouldBe)
 import Text.Read (readMaybe)
 
