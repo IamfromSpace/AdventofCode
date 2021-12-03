@@ -136,11 +136,13 @@ module AdventOfCode.ArrowParser
     string,
     linesOf,
     linesOf',
+    decimal,
   )
 where
 
 import Control.Arrow (Arrow (..), ArrowChoice (..), ArrowPlus (..), ArrowZero (..), returnA, (>>>), (>>^), (^>>))
 import Control.Category (Category (..))
+import Data.Char (digitToInt)
 import Data.Foldable (Foldable (..))
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
@@ -557,3 +559,16 @@ linesOf' p =
       &&& optional p
   )
     >>^ (\(a, b) -> a <> maybe [] pure b)
+
+-- | Simple positive-only decimal number parser.  No boundary is enforced.
+--
+-- >>> parse decimal "125" :: Either _ Int
+-- Right 125
+--
+-- >>> parse decimal "125a" :: Either _ Int
+-- Right 125
+--
+-- >>> parse decimal "1259834750981759873493879239843750989349713471283237598384346837835" :: Either _ Integer
+-- Right 1259834750981759873493879239843750989349713471283237598384346837835
+decimal :: Integral i => APC () i
+decimal = many1 digit >>^ (\xs -> sum $ zipWith (\c e -> 10 ^ e * (fromIntegral (digitToInt c))) (reverse xs) [0 ..])
