@@ -25,7 +25,7 @@ import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
 import qualified Data.Either as Either
-import Data.Foldable (toList)
+import Data.Foldable (fold, toList)
 import qualified Data.List as List
 import qualified Data.List.Split as Split
 import Data.Map (Map)
@@ -39,7 +39,7 @@ import qualified Data.Set as Set
 import Data.String (fromString)
 import Test.Hspec (describe, it, shouldBe)
 import Text.Read (readMaybe)
-import Prelude hiding (init, lookup, map, (++))
+import Prelude hiding (foldr, init, lookup, map, (++))
 
 type V2 = Util.Vector (Integer, Integer)
 
@@ -57,7 +57,7 @@ parse2 :: String -> _
 parse2 = parse1
 
 answer1 :: [V2] -> _
-answer1 = (\(Util.Vector (x, y)) -> x * y) . foldr (<>) mempty
+answer1 = (\(Util.Vector (x, y)) -> x * y) . fold
 
 run :: (Integer, V2) -> V2 -> (Integer, V2)
 run (aim, cur) next =
