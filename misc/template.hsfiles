@@ -165,7 +165,7 @@ tests = do
         it "example 1" $ p1 "./ex1_1.txt" undefined
     describe "part 2" $ do
         let p2 = Util.autoFileTest (answer2 . parse2)
-        it "example 5" $ p2 "./ex2_5.txt" undefined
+        it "example 1" $ p2 "./ex2_1.txt" undefined
 
 {-# START_FILE app/Main.hs #-}
 module Main where
