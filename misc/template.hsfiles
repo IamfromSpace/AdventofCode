@@ -15,6 +15,7 @@ dependencies:
   - bytestring
   - containers
   - cryptohash-md5
+  - groups
   - hspec
   - lens
   - monad-loops
@@ -121,6 +122,7 @@ import Data.ByteString.UTF8 ()
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import Data.Foldable (fold, toList)
+import Data.Group (invert, (~~))
 import qualified Data.List as List
 import qualified Data.List.Split as Split
 import Data.Monoid (Sum(..))
