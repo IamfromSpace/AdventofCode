@@ -73,6 +73,7 @@ import Control.Monad.Loops (iterateWhile)
 import Control.Monad.State.Lazy (State, evalState, get, put)
 import qualified Crypto.Hash.MD5 as MD5
 import Data.ByteString (ByteString, unpack)
+import Data.Group (Group (..), Abelian)
 import Data.List (foldl', partition, sortOn)
 import Data.List.Split (chunksOf, splitOn)
 import Data.Map (Map)
@@ -134,6 +135,11 @@ instance Semigroup (Vector Integer) where
 instance Monoid (Vector Integer) where
     mempty = Vector 0
 
+instance Group (Vector Integer) where
+    invert (Vector x) = (Vector (-x))
+
+instance Abelian (Vector Integer)
+
 instance Semigroup (Vector (Integer, Integer)) where
     Vector (a0, a1) <> Vector (b0, b1) = Vector (a0 + b0, a1 + b1)
 
@@ -146,6 +152,16 @@ instance Monoid (Vector (Integer, Integer)) where
 instance Monoid (Vector (Ratio Integer, Ratio Integer)) where
     mempty = Vector (0, 0)
 
+instance Group (Vector (Integer, Integer)) where
+    invert (Vector (a, b)) = Vector (-a, -b)
+
+instance Group (Vector (Ratio Integer, Ratio Integer)) where
+    invert (Vector (a, b)) = Vector (-a, -b)
+
+instance Abelian (Vector (Integer, Integer))
+
+instance Abelian (Vector (Ratio Integer, Ratio Integer))
+
 instance Semigroup (Vector (Integer, Integer, Integer)) where
     Vector (a0, a1, a2) <> Vector (b0, b1, b2) =
         Vector (a0 + b0, a1 + b1, a2 + b2)
@@ -153,12 +169,22 @@ instance Semigroup (Vector (Integer, Integer, Integer)) where
 instance Monoid (Vector (Integer, Integer, Integer)) where
     mempty = Vector (0, 0, 0)
 
+instance Group (Vector (Integer, Integer, Integer)) where
+    invert (Vector (a, b, c)) = Vector (-a, -b, -c)
+
+instance Abelian (Vector (Integer, Integer, Integer))
+
 instance Semigroup (Vector (Integer, Integer, Integer, Integer)) where
     Vector (a0, a1, a2, a3) <> Vector (b0, b1, b2, b3) =
         Vector (a0 + b0, a1 + b1, a2 + b2, a3 + b3)
 
 instance Monoid (Vector (Integer, Integer, Integer, Integer)) where
     mempty = Vector (0, 0, 0, 0)
+
+instance Group (Vector (Integer, Integer, Integer, Integer)) where
+    invert (Vector (a, b, c, d)) = Vector (-a, -b, -c, -d)
+
+instance Abelian (Vector (Integer, Integer, Integer, Integer))
 
 class ManhattanLength a where
     manLen :: a -> Integer
