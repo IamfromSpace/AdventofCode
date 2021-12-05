@@ -35,58 +35,36 @@ import Prelude hiding (foldr, init, lookup, map, (++))
 plays :: APC () [Int]
 plays = AP.sepBy1 AP.decimal (AP.token ',')
 
-boardLine :: APC Int [(Int, Int)]
-boardLine = proc i -> do
-  AP.optional (AP.token ' ') -< ()
-  a <- AP.decimal -< ()
-  AP.many1 (AP.token ' ') -< ()
-  b <- AP.decimal -< ()
-  AP.many1 (AP.token ' ') -< ()
-  c <- AP.decimal -< ()
-  AP.many1 (AP.token ' ') -< ()
-  d <- AP.decimal -< ()
-  AP.many1 (AP.token ' ') -< ()
-  e <- AP.decimal -< ()
-  returnA -< [(a, i + 0), (b, i + 1), (c, i + 2), (d, i + 3), (e, i + 4)]
+boardLine :: APC () [Int]
+boardLine = AP.optional (AP.token ' ') !>> AP.sepBy1 AP.decimal (AP.many1 (AP.token ' '))
 
-board :: APC Int (Map Int Int)
-board = proc i -> do
-  a <- boardLine -< i
-  AP.token '\n' -< ()
-  b <- boardLine -< (i + 5)
-  AP.token '\n' -< ()
-  c <- boardLine -< (i + 10)
-  AP.token '\n' -< ()
-  d <- boardLine -< (i + 15)
-  AP.token '\n' -< ()
-  e <- boardLine -< (i + 20)
-  AP.token '\n' -< ()
-  returnA -< Map.fromList (a <> b <> c <> d <> e)
+board :: APC () (Map Int Int)
+board =
+  (const (5, ()) ^>> AP.count (boardLine >>! AP.token '\n')) >>^ (Map.fromList . flip zip [0 ..] . concat)
 
 boards :: APC () [Map Int Int]
-boards = AP.sepBy1 (const 0 ^>> board) (AP.token '\n')
+boards = AP.sepBy1 board (AP.token '\n')
 
 input :: APC () ([Int], [Map Int Int])
 input = (plays >>! AP.string "\n\n") &&& boards
 
+-- Cleaned up substantially
 parse1 :: String -> _
 parse1 = AP.parseImpure input
 
 parse2 :: String -> _
 parse2 = parse1
 
+winners :: [[Int]]
+winners =
+  fmap
+    (\(a, b) -> fmap (\i -> a * i + b) [0 .. 4])
+    (fmap ((,) 1) [0, 5 .. 20] <> fmap ((,) 5) [0 .. 4])
+
+-- Cleaned up substantially
 hasWon :: Set Int -> Bool
 hasWon s =
-  Set.size (s `Set.intersection` Set.fromList [0 .. 4]) == 5
-    || Set.size (s `Set.intersection` Set.fromList [5 .. 9]) == 5
-    || Set.size (s `Set.intersection` Set.fromList [10 .. 14]) == 5
-    || Set.size (s `Set.intersection` Set.fromList [15 .. 19]) == 5
-    || Set.size (s `Set.intersection` Set.fromList [20 .. 24]) == 5
-    || Set.size (s `Set.intersection` Set.fromList (fmap (\x -> x * 5 + 0) [0 .. 4])) == 5
-    || Set.size (s `Set.intersection` Set.fromList (fmap (\x -> x * 5 + 1) [0 .. 4])) == 5
-    || Set.size (s `Set.intersection` Set.fromList (fmap (\x -> x * 5 + 2) [0 .. 4])) == 5
-    || Set.size (s `Set.intersection` Set.fromList (fmap (\x -> x * 5 + 3) [0 .. 4])) == 5
-    || Set.size (s `Set.intersection` Set.fromList (fmap (\x -> x * 5 + 4) [0 .. 4])) == 5
+  any (all (flip Set.member s)) winners
 
 playBoard1 :: Map Int Int -> Int -> Set Int -> Set Int
 playBoard1 board called marked =
