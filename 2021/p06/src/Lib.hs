@@ -28,6 +28,8 @@ import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (fromString)
+import Data.Vector.Mutable (IOVector)
+import qualified Data.Vector.Mutable as Vec
 import Test.Hspec (describe, it, shouldBe)
 import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, (++))
@@ -38,29 +40,30 @@ parse1 s = read ("[" <> s <> "]") :: [Int]
 parse2 :: String -> _
 parse2 = parse1
 
--- So ugly, lol
-toCounts :: [Int] -> (Int, Int, Int, Int, Int, Int, Int, Int, Int) -> (Int, Int, Int, Int, Int, Int, Int, Int, Int)
-toCounts [] t = t
-toCounts (0 : t) (x0, x1, x2, x3, x4, x5, x6, x7, x8) = toCounts t (x0 + 1, x1, x2, x3, x4, x5, x6, x7, x8)
-toCounts (1 : t) (x0, x1, x2, x3, x4, x5, x6, x7, x8) = toCounts t (x0, x1 + 1, x2, x3, x4, x5, x6, x7, x8)
-toCounts (2 : t) (x0, x1, x2, x3, x4, x5, x6, x7, x8) = toCounts t (x0, x1, x2 + 1, x3, x4, x5, x6, x7, x8)
-toCounts (3 : t) (x0, x1, x2, x3, x4, x5, x6, x7, x8) = toCounts t (x0, x1, x2, x3 + 1, x4, x5, x6, x7, x8)
-toCounts (4 : t) (x0, x1, x2, x3, x4, x5, x6, x7, x8) = toCounts t (x0, x1, x2, x3, x4 + 1, x5, x6, x7, x8)
-toCounts (5 : t) (x0, x1, x2, x3, x4, x5, x6, x7, x8) = toCounts t (x0, x1, x2, x3, x4, x5 + 1, x6, x7, x8)
-toCounts (6 : t) (x0, x1, x2, x3, x4, x5, x6, x7, x8) = toCounts t (x0, x1, x2, x3, x4, x5, x6 + 1, x7, x8)
-toCounts _ _ = error "bad"
+toCounts :: [Int] -> IOVector Integer -> IO (IOVector Integer)
+toCounts [] v = return v
+toCounts (h : t) v = Vec.unsafeModify v ((+) 1) h *> toCounts t v
 
-day :: (Int, Int, Int, Int, Int, Int, Int, Int, Int) -> (Int, Int, Int, Int, Int, Int, Int, Int, Int)
-day (x0, x1, x2, x3, x4, x5, x6, x7, x8) = (x1, x2, x3, x4, x5, x6, x7 + x0, x8, x0)
+day :: IOVector Integer -> Int -> IO ()
+day v !d = Vec.unsafeRead v d >>= (\x -> Vec.unsafeModify v ((+) x) ((d + 7) `mod` 9))
 
-addUp :: (Int, Int, Int, Int, Int, Int, Int, Int, Int) -> Int
-addUp (x0, x1, x2, x3, x4, x5, x6, x7, x8) = x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8
+addUp :: IOVector Integer -> IO Integer
+addUp = Vec.foldl (+) 0
 
+answer :: _ -> _ -> _
+answer dayCount is = do
+  v <- Vec.replicate 9 0
+  x <- toCounts is v
+    *> List.foldl' (\f i -> f *> day v i) (pure ()) (take dayCount (cycle [0 .. 8]))
+    *> addUp v
+  return $ length $ show x
+
+-- These changed substantially
 answer1 :: _ -> _
-answer1 is = addUp $ Util.applyNTimes day (toCounts is (0, 0, 0, 0, 0, 0, 0, 0, 0)) 80
+answer1 = answer 80
 
 answer2 :: _ -> _
-answer2 is = addUp $ Util.applyNTimes day (toCounts is (0, 0, 0, 0, 0, 0, 0, 0, 0)) 256
+answer2 = answer 256
 
 show1 :: Show _a => _a -> String
 show1 = show
@@ -72,9 +75,3 @@ tests :: _
 tests = do
   describe "pure components" $ do
     it "should parse" $ parse1 undefined `shouldBe` undefined
-  describe "part 1" $ do
-    let p1 = Util.autoFileTest (answer1 . parse1)
-    it "example 1" $ p1 "./ex1_1.txt" undefined
-  describe "part 2" $ do
-    let p2 = Util.autoFileTest (answer2 . parse2)
-    it "example 1" $ p2 "./ex2_1.txt" undefined
