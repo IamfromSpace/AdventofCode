@@ -1,0 +1,102 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: b949c5ca66334f1def5594b932030e631544e5e8d17dc527e68d2630fd743b69
+
+name:           p08
+version:        0.1.0.0
+description:    Solution for an Advent of Code challenge
+homepage:       https://github.com/githubuser/p08#readme
+bug-reports:    https://github.com/githubuser/p08/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2021 Author name here
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/p08
+
+library
+  exposed-modules:
+      Lib
+  other-modules:
+      Paths_p08
+  hs-source-dirs:
+      src
+  default-extensions: Arrows BangPatterns BinaryLiterals DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable EmptyCase LambdaCase MultiParamTypeClasses NamedFieldPuns OverloadedStrings OverloadedStrings PartialTypeSignatures ViewPatterns
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fno-warn-partial-type-signatures -fno-warn-name-shadowing -fwarn-tabs -fno-warn-unused-imports -fwarn-missing-signatures -fwarn-incomplete-patterns
+  build-depends:
+      Hclip
+    , advent-of-code
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , cryptohash-md5
+    , groups
+    , hspec
+    , lens
+    , monad-loops
+    , mtl
+    , split
+    , text
+    , utf8-string
+  default-language: Haskell2010
+
+executable aoc
+  main-is: Main.hs
+  other-modules:
+      Paths_p08
+  hs-source-dirs:
+      app
+  default-extensions: Arrows BangPatterns BinaryLiterals DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable EmptyCase LambdaCase MultiParamTypeClasses NamedFieldPuns OverloadedStrings OverloadedStrings PartialTypeSignatures ViewPatterns
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fno-warn-partial-type-signatures -fno-warn-name-shadowing -fwarn-tabs -fno-warn-unused-imports -fwarn-missing-signatures -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      Hclip
+    , advent-of-code
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , cryptohash-md5
+    , groups
+    , hspec
+    , lens
+    , monad-loops
+    , mtl
+    , p08
+    , split
+    , text
+    , utf8-string
+  default-language: Haskell2010
+
+test-suite p08-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_p08
+  hs-source-dirs:
+      test
+  default-extensions: Arrows BangPatterns BinaryLiterals DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable EmptyCase LambdaCase MultiParamTypeClasses NamedFieldPuns OverloadedStrings OverloadedStrings PartialTypeSignatures ViewPatterns
+  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fno-warn-partial-type-signatures -fno-warn-name-shadowing -fwarn-tabs -fno-warn-unused-imports -fwarn-missing-signatures -fwarn-incomplete-patterns -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      Hclip
+    , advent-of-code
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , cryptohash-md5
+    , groups
+    , hspec
+    , lens
+    , monad-loops
+    , mtl
+    , p08
+    , split
+    , text
+    , utf8-string
+  default-language: Haskell2010
