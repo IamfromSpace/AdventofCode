@@ -173,7 +173,7 @@ data APError t
     --
     -- This is useful in certain combinators like `notFollowedBy`.
     DeadEnd
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- | Generic type for a parser, where t is the token type.
 newtype AP t a b = AP
