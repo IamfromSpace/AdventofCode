@@ -32,31 +32,33 @@ import Test.Hspec (describe, it, shouldBe)
 import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, (++))
 
-parse1 :: String -> [((Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char), (Set Char, Set Char, Set Char, Set Char))]
-parse1 s =
+parse1 :: String -> [([Set Char], [Set Char])]
+parse1 =
   fmap
-    ( \line -> case words line of
-        [a, b, c, d, e, f, g, h, i, j, "|", x, y, z, zz] -> ((Set.fromList a, Set.fromList b, Set.fromList c, Set.fromList d, Set.fromList e, Set.fromList f, Set.fromList g, Set.fromList h, Set.fromList i, Set.fromList j), (Set.fromList x, Set.fromList y, Set.fromList z, Set.fromList zz))
+    ( \line ->
+        let w = fmap Set.fromList $ words line
+         in (take 10 w, drop 11 w)
     )
-    $ lines s
+    . lines
 
 parse2 :: String -> _
 parse2 = parse1
 
+is1478 :: Set Char -> Bool
 is1478 x = Set.size x == 2 || Set.size x == 4 || Set.size x == 3 || Set.size x == 7
 
 count1478 :: _ -> _
-count1478 (_, (a, b, c, d)) = length $ filter is1478 [a, b, c, d]
+count1478 (_, xs) = length $ filter is1478 xs
 
-answer1 :: [((Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char), (Set Char, Set Char, Set Char, Set Char))] -> _
-answer1 xs = sum $ fmap (count1478) xs
+answer1 :: [([Set Char], [Set Char])] -> _
+answer1 = sum . fmap count1478
 
 testCombo' :: _ -> [Char] -> Bool
 testCombo' s rule =
   Maybe.isJust (toDigit s rule)
 
 testCombo :: _ -> [Char] -> Bool
-testCombo ((a, b, c, d, e, f, g, h, i, j), (x, y, z, zz)) combo = all (flip testCombo' combo) [a, b, c, d, e, f, g, h, i, j, x, y, z, zz]
+testCombo (xs, _) combo = all (flip testCombo' combo) xs
 
 toDigit :: Set Char -> [Char] -> Maybe Int
 toDigit s [t, tl, tr, m, bl, br, b] =
@@ -74,8 +76,8 @@ toDigit s [t, tl, tr, m, bl, br, b] =
     _ -> Nothing
 toDigit _ _ = error "bad"
 
-toNumber :: (Set Char, Set Char, Set Char, Set Char) -> _ -> Int
-toNumber (a, b, c, d) rule =
+toNumber :: [Set Char] -> _ -> Int
+toNumber [a, b, c, d] rule =
   1000 * (Maybe.fromJust $ toDigit a rule)
     + 100 * (Maybe.fromJust $ toDigit b rule)
     + 10 * (Maybe.fromJust $ toDigit c rule)
@@ -92,7 +94,7 @@ perms = List.permutations "abcdefg"
 -- (fromList "bcdefg" (9),fromList "bcg"(7),fromList "abcdefg"(8),fromList "gc"(1))
 -- [b, ?, gc, ?, ?, gc, ?]
 
-getNum :: ((Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char, Set Char), (Set Char, Set Char, Set Char, Set Char)) -> Int
+getNum :: ([Set Char], [Set Char]) -> Int
 getNum xs@(_, x) =
   let rule = case filter (testCombo xs) perms of
         (h : _) -> h -- We don't care if it's ambiguous...?
