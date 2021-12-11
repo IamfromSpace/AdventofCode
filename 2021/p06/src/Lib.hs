@@ -21,6 +21,8 @@ import qualified Data.List as List
 import qualified Data.List.Split as Split
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Matrix (Matrix)
+import qualified Data.Matrix as Matrix
 import qualified Data.Maybe as Maybe
 import Data.Monoid (Sum (..))
 import Data.Sequence (Seq (..), (<|), (|>))
@@ -28,8 +30,6 @@ import qualified Data.Sequence as Seq
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String (fromString)
-import Data.Vector.Mutable (IOVector)
-import qualified Data.Vector.Mutable as Vec
 import Test.Hspec (describe, it, shouldBe)
 import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, (++))
@@ -40,23 +40,34 @@ parse1 s = read ("[" <> s <> "]") :: [Int]
 parse2 :: String -> _
 parse2 = parse1
 
-toCounts :: [Int] -> IOVector Integer -> IO (IOVector Integer)
-toCounts [] v = return v
-toCounts (h : t) v = Vec.unsafeModify v ((+) 1) h *> toCounts t v
+toCounts :: [Int] -> Map Int Int -> Matrix Integer
+toCounts [] m = Matrix.fromLists (List.transpose [fmap (fromIntegral . snd) (Map.toList m) <> [0, 0, 0, 0]])
+toCounts (h : t) m = toCounts t (Map.alter (Just . (+) 1 . Maybe.fromMaybe 0) h m)
 
-day :: IOVector Integer -> Int -> IO ()
-day v !d = Vec.unsafeRead v d >>= (\x -> Vec.unsafeModify v ((+) x) ((d + 7) `mod` 9))
+day :: Matrix Integer
+day =
+  Matrix.fromLists
+    [ [0, 1, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 1, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 1, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 1, 0, 0],
+      [1, 0, 0, 0, 0, 0, 0, 1, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 1],
+      [1, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]
 
-addUp :: IOVector Integer -> IO Integer
-addUp = Vec.foldl (+) 0
+fastExp :: Int -> Matrix Integer -> Matrix Integer
+fastExp (flip divMod 2 -> (0, 1)) !m = m
+fastExp (flip divMod 2 -> (n, 1)) !m =
+  Matrix.multStd2 m (fastExp n (Matrix.multStd2 m m))
+fastExp (flip divMod 2 -> (n, 0)) !m =
+  fastExp n (Matrix.multStd2 m m)
+fastExp _ _ = error "fast exponentiation error"
 
-answer :: _ -> _ -> _
-answer dayCount is = do
-  v <- Vec.replicate 9 0
-  x <- toCounts is v
-    *> List.foldl' (\f i -> f *> day v i) (pure ()) (take dayCount (cycle [0 .. 8]))
-    *> addUp v
-  return $ length $ show x
+answer :: Int -> [Int] -> Integer
+answer dayCount is = sum $ Matrix.toList $ Matrix.multStd2 (fastExp (dayCount - 1) day) (toCounts is mempty)
 
 -- These changed substantially
 answer1 :: _ -> _

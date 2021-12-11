@@ -17,6 +17,7 @@ dependencies:
   - groups
   - hspec
   - lens
+  - matrix
   - monad-loops
   - mtl
   - split

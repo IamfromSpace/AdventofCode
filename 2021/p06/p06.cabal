@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f2cdde3c6124c84a52c186299d529103760898ae021f3e56eb3f24885af0ce1e
+-- hash: 79d9e4ef908b36c921a7537012fc4eef072b0f015e8c93fd3a4cde3ef79518ed
 
 name:           p06
 version:        0.1.0.0
@@ -40,6 +40,7 @@ library
     , groups
     , hspec
     , lens
+    , matrix
     , monad-loops
     , mtl
     , split
@@ -65,6 +66,7 @@ executable aoc
     , groups
     , hspec
     , lens
+    , matrix
     , monad-loops
     , mtl
     , p06
@@ -92,6 +94,7 @@ test-suite p06-test
     , groups
     , hspec
     , lens
+    , matrix
     , monad-loops
     , mtl
     , p06
