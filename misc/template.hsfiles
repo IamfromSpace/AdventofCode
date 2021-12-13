@@ -161,7 +161,7 @@ show2 = show
 tests :: _
 tests = do
     describe "pure components" $ do
-        it "should parse" $ parse1 undefined `shouldBe` undefined
+        it "should work" $ 'a' `shouldBe` 'a'
     describe "part 1" $ do
         let p1 = Util.autoFileTest (answer1 . parse1)
         it "example 1" $ p1 "./ex1_1.txt" undefined
