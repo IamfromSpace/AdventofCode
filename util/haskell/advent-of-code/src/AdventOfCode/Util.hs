@@ -58,6 +58,7 @@ module AdventOfCode.Util
     , area
     -- * Misc
     , listToIndexMap
+    , aocShow
     -- * Testing
     , autoFileTest
     -- * Deprecated
@@ -91,6 +92,7 @@ import System.IO.Error (IOError, isDoesNotExistError)
 import Test.Hspec (pendingWith, shouldBe)
 import Text.ParserCombinators.PArrow (MD)
 import qualified Text.ParserCombinators.PArrow as PA
+import Text.Read (readMaybe)
 
 -- | This runs a PArrow parser against a string, returning the successful
 -- result.  THIS IS IMPURE and will throw an error if the input is not accepted
@@ -788,3 +790,21 @@ autoFileTest f fileName expected = do
     case mContents of
         Nothing -> pendingWith ("File " <> fileName <> " does not exist")
         Just contents -> f contents `shouldBe` expected
+
+-- | A small utility for smart rendering outputs for AoC--specifically to
+-- prevent outputing strings in quotes with escapes.  This attempts to detect
+-- if a string is being shown, and if so, just output that directly.
+--
+-- A non-String input works identically to `show`.
+--
+-- >>> (aocShow 814, show 814)
+-- ("817", "817")
+--
+-- A String input does not double encode like `show` would.
+--
+-- >>> (aocShow "A string!", show "A string!")
+-- ("A string!", "\"A string!\"")
+aocShow :: Show a => a -> String
+aocShow x = case show x of
+  s@('"' : _) -> fromMaybe s $ readMaybe s
+  s -> s
