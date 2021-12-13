@@ -55,45 +55,51 @@ toMap xs =
           m
     )
     mempty
-    (xs <> fmap (\(a, b) -> (b, a)) xs)
+    (xs <> fmap (\(a, b) -> (b, a)) (filter (\(f,t) -> not (f == "start" || t == "end")) xs))
 
-follow :: Map String [String] -> Set String -> String -> [[String]]
-follow _ _ "end" = [["end"]]
-follow caves notAllowed p =
-  case Map.lookup p caves of
-    Nothing -> error "this can't happen???"
-    Just options ->
-      let nexts = filter (\o -> not (Set.member o notAllowed)) options
-       in fmap (\xxx -> p : xxx) $ concatMap (\n -> follow caves (if all Char.isLower n then Set.insert n notAllowed else notAllowed) n) nexts
 
+follow :: Map String [String] -> (Set String, String) -> [[String]]
+follow caves =
+  fmap (fmap snd)
+    . Util.explorePaths
+      ( \(notAllowed, p) ->
+          let options = Maybe.fromMaybe [] $ Map.lookup p caves
+              allowedOptions = filter (not . flip Set.member notAllowed) options
+              nextAllowed o = if all Char.isLower o then Set.insert o notAllowed else notAllowed
+           in fmap (\o -> (nextAllowed o, o)) allowedOptions
+      )
+
+-- Answers changed from original
 answer1 :: _ -> _
 answer1 xs =
   length $
     filter (\(h : _) -> h == "end") $
       fmap reverse $
-        follow (toMap xs) (Set.singleton "start") "start"
+        follow (toMap xs) ((Set.singleton "start"), "start")
 
-follow2 :: Map String [String] -> Set String -> Maybe String -> String -> [[String]]
-follow2 _ _ _ "end" = [["end"]]
-follow2 caves notAllowed double p =
-  case Map.lookup p caves of
-    Nothing -> error "this can't happen???"
-    Just options ->
-      let nexts = filter (\o -> not (o == "start" || (Set.member o notAllowed && Maybe.isJust double))) options
-       in fmap (\xxx -> p : xxx) $
-            concatMap
-              ( \n ->
-                  let (na, d) = if all Char.isLower n then (if Set.member n notAllowed then (notAllowed, Just n) else (Set.insert n notAllowed, double)) else (notAllowed, double)
-                   in follow2 caves na d n
-              )
-              nexts
+follow2 :: Map String [String] -> (Set String, Maybe String, String) -> [[String]]
+follow2 caves =
+  fmap (fmap (\(_, _, x) -> x))
+    . Util.explorePaths
+      ( \(notAllowed, double, p) ->
+          let options = Maybe.fromMaybe [] $ Map.lookup p caves
+              allowedOptions = filter (\o -> not (Set.member o notAllowed && Maybe.isJust double)) options
+              next o =
+                if all Char.isLower o
+                  then
+                    if Set.member o notAllowed
+                      then (notAllowed, Just o, o)
+                      else (Set.insert o notAllowed, double, o)
+                  else (notAllowed, double, o)
+           in fmap next allowedOptions
+      )
 
 answer2 :: _ -> _
 answer2 xs =
   length $
     filter (\(h : _) -> h == "end") $
       fmap reverse $
-        follow2 (toMap xs) mempty Nothing "start"
+        follow2 (toMap xs) (mempty, Nothing, "start")
 
 show1 :: Show _a => _a -> String
 show1 = show
@@ -113,5 +119,5 @@ tests = do
     let p2 = Util.autoFileTest (answer2 . parse2)
     it "example 1" $ p2 "./ex2.txt" 3509
   describe "part 2" $ do
-    let p2 = Util.autoFileTest (\xs -> follow2 (toMap (parse1 xs)) mempty Nothing "start")
+    let p2 = Util.autoFileTest (\xs -> follow2 (toMap (parse1 xs)) (mempty, Nothing, "start"))
     it "example 1" $ p2 "./ex1.txt" []
