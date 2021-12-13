@@ -152,11 +152,11 @@ answer1 = id
 answer2 :: _ -> _
 answer2 = id
 
-show1 :: Show _a => _a -> String
-show1 = show
+show1 :: Show a => a -> String
+show1 = Util.aocShow
 
-show2 :: Show _a => _a -> String
-show2 = show
+show2 :: Show a => a -> String
+show2 = Util.aocShow
 
 tests :: _
 tests = do
