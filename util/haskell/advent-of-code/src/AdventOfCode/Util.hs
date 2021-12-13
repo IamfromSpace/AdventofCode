@@ -43,6 +43,7 @@ module AdventOfCode.Util
     , AStarStepOption2(..)
     , aStar2
     , explore
+    , explorePaths
       -- * Geometry
     , Vector(..)
     , intoVector
@@ -740,6 +741,28 @@ explore maxCost getOptions pInit =
     evalState
         (iterateWhile isNothing (exploreStep maxCost getOptions))
         (Map.singleton pInit mempty, Set.singleton (mempty, pInit))
+
+-- | Find every possible path (lazily).  This is the starting point for a DFS.
+--
+-- Be sure that options do eventually terminate or this will run infinitely.
+-- Notably, position can be abstract, to consider state as one explores a
+-- geometric space.  Unlike `explore` and `aStar2` this omits a cost
+-- consideration, but it can be included by considering the cost a part of the
+-- position (as there is never any attempt to prune).
+--
+-- >>> take 3 $ explorePaths (\p -> if p >= 5 then [] else [p+1, p+2]) 0
+-- [[0,1,2,3,4,5],[0,1,2,3,4,6],[0,1,2,3,5]]
+explorePaths ::
+  -- | Function to get all next possible positions based on the current
+  (position -> [position]) ->
+  -- | The starting position
+  position ->
+  -- | The list of all paths (which are lists of positions)
+  [[position]]
+explorePaths f p =
+  case f p of
+    [] -> [[p]]
+    os -> ((:) p) <$> (explorePaths f =<< os)
 
 -- | Common hashing approach in 2016 problems where we want the hex
 -- representation as a string out.
