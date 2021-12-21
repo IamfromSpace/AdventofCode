@@ -57,36 +57,16 @@ injectRight :: Int -> STree -> STree
 injectRight x (R y) = R (x + y)
 injectRight x (P a b) = P a (injectRight x b)
 
--- Nothing means reduced
-{-
-reduce :: Int -> STree -> Maybe (Maybe Int, STree, Maybe Int)
-reduce _ (R n) =
-  if n >= 10
-    then
-      let (x, y) = n `divMod` 2
-       in Just (Nothing, P (R x) (R (x + y)), Nothing)
-    else Nothing
-reduce 4 (P (R a) (R b)) = Just (Just a, R 0, Just b)
-reduce d (P a b) =
-  case reduce (d + 1) a of
-    Just (left, a', Nothing) -> Just (left, P a' b, Nothing)
-    Just (left, a', Just x) -> Just (left, P a' (injectLeft x b), Nothing)
-    Nothing -> case reduce (d + 1) b of
-      Just (Nothing, b', right) -> Just (Nothing, P a b', right)
-      Just (Just x, b', right) -> Just (Nothing, P (injectRight x a) b', right)
-      Nothing -> Nothing
--}
+-- some minor cleanup here
 explode :: Int -> STree -> Maybe (Maybe Int, STree, Maybe Int)
 explode _ (R _) = Nothing
 explode 4 (P (R a) (R b)) = Just (Just a, R 0, Just b)
 explode d (P a b) =
-  case explode (d + 1) a of
-    Just (left, a', Nothing) -> Just (left, P a' b, Nothing)
-    Just (left, a', Just x) -> Just (left, P a' (injectLeft x b), Nothing)
-    Nothing -> case explode (d + 1) b of
-      Just (Nothing, b', right) -> Just (Nothing, P a b', right)
-      Just (Just x, b', right) -> Just (Nothing, P (injectRight x a) b', right)
-      Nothing -> Nothing
+  let onExplodeA (left, a', right) =
+        (left, P a' (maybe b (flip injectLeft b) right), Nothing)
+      onExplodeB (left, b', right) =
+        (Nothing, P (maybe a (flip injectRight a) left) b', right)
+   in fmap onExplodeA (explode (d + 1) a) <|> fmap onExplodeB (explode (d + 1) b)
 
 split :: STree -> Maybe STree
 split (R n) =
@@ -95,12 +75,7 @@ split (R n) =
       let (x, y) = n `divMod` 2
        in Just (P (R x) (R (x + y)))
     else Nothing
-split (P a b) =
-  case split a of
-    Just a' -> Just (P a' b)
-    Nothing -> case split b of
-      Just b' -> Just (P a b')
-      Nothing -> Nothing
+split (P a b) = fmap (flip P b) (split a) <|> fmap (P a) (split b)
 
 reduce :: STree -> Maybe STree
 reduce x = case explode 0 x of
