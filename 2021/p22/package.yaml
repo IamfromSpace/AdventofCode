@@ -1,0 +1,83 @@
+name:                p22
+version:             0.1.0.0
+github:              "githubuser/p22"
+license:             BSD3
+author:              "Author name here"
+maintainer:          "example@example.com"
+copyright:           "2021 Author name here"
+
+description:         Solution for an Advent of Code challenge
+
+dependencies:
+  - base >= 4.7 && < 5
+  - advent-of-code
+  - bytestring
+  - containers
+  - cryptohash-md5
+  - groups
+  - Hclip
+  - hspec
+  - lens
+  - monad-loops
+  - mtl
+  - range
+  - split
+  - text
+  - utf8-string
+
+default-extensions:
+  - Arrows
+  - BangPatterns
+  - BinaryLiterals
+  - DeriveFoldable
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveLift
+  - DeriveTraversable
+  - EmptyCase
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  - OverloadedStrings
+  - OverloadedStrings
+  - PartialTypeSignatures
+  - ViewPatterns
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wredundant-constraints
+  - -fno-warn-partial-type-signatures
+  - -fno-warn-name-shadowing
+  - -fwarn-tabs
+  - -fno-warn-unused-imports
+  - -fwarn-missing-signatures
+  - -fwarn-incomplete-patterns
+
+library:
+  source-dirs: src
+
+executables:
+  aoc:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - p22
+
+tests:
+  p22-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - p22
+    - hspec
