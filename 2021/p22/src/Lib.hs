@@ -86,8 +86,10 @@ answer1 = Set.size . runAllCubes boundedRange
 data RangeResult
   = LeftInRight
   | NoIntersection
-  | Intesection Range3 Range3
+  | Intersection Range3 Range3
 
+-- This approach has been altered (and cleaned up) to "form fit" around the
+-- intersection point, rather than simply split in half each time.
 compOrSplit :: Range3 -> Range3 -> RangeResult
 compOrSplit ((minX1, maxX1), (minY1, maxY1), (minZ1, maxZ1)) ((minX2, maxX2), (minY2, maxY2), (minZ2, maxZ2)) =
   if maxX1 < minX2
@@ -106,27 +108,24 @@ compOrSplit ((minX1, maxX1), (minY1, maxY1), (minZ1, maxZ1)) ((minX2, maxX2), (m
         && maxZ1 <= maxZ2
         then LeftInRight
         else
-          if not (maxX1 < minX2 || minX1 > maxX2) && not (minX1 >= minX2 && maxX1 <= maxX2)
-            then
-              let (newLength, check) = (maxX1 - minX1 + 1) `divMod` 2
-               in if check == 1
-                    then error "underflow x"
-                    else Intesection ((minX1, maxX1 - newLength), (minY1, maxY1), (minZ1, maxZ1)) ((minX1 + newLength, maxX1), (minY1, maxY1), (minZ1, maxZ1))
+          if minX1 < minX2 && maxX1 >= minX2
+            then Intersection ((minX1, minX2 - 1), (minY1, maxY1), (minZ1, maxZ1)) ((minX2, maxX1), (minY1, maxY1), (minZ1, maxZ1))
             else
-              if not (maxY1 < minY2 || minY1 > maxY2) && not (minY1 >= minY2 && maxY1 <= maxY2)
-                then
-                  let (newLength, check) = (maxY1 - minY1 + 1) `divMod` 2
-                   in if check == 1
-                        then error "underflow y"
-                        else Intesection ((minX1, maxX1), (minY1, maxY1 - newLength), (minZ1, maxZ1)) ((minX1, maxX1), (minY1 + newLength, maxY1), (minZ1, maxZ1))
+              if minX1 <= maxX2 && maxX1 > maxX2
+                then Intersection ((minX1, maxX2), (minY1, maxY1), (minZ1, maxZ1)) ((maxX2 + 1, maxX1), (minY1, maxY1), (minZ1, maxZ1))
                 else
-                  if not (maxZ1 < minZ2 || minZ1 > maxZ2) && not (minZ1 >= minZ2 && maxZ1 <= maxZ2)
-                    then
-                      let (newLength, check) = (maxZ1 - minZ1 + 1) `divMod` 2
-                       in if check == 1
-                            then error "underflow z"
-                            else Intesection ((minX1, maxX1), (minY1, maxY1), (minZ1, maxZ1 - newLength)) ((minX1, maxX1), (minY1, maxY1), (minZ1 + newLength, maxZ1))
-                    else NoIntersection
+                  if minY1 < minY2 && maxY1 >= minY2
+                    then Intersection ((minX1, maxX1), (minY1, minY2 - 1), (minZ1, maxZ1)) ((minX1, maxX1), (minY2, maxY1), (minZ1, maxZ1))
+                    else
+                      if minY1 <= maxY2 && maxY1 > maxY2
+                        then Intersection ((minX1, maxX1), (minY1, maxY2), (minZ1, maxZ1)) ((minX1, maxX1), (maxY2 + 1, maxY1), (minZ1, maxZ1))
+                        else
+                          if minZ1 < minZ2 && maxZ1 >= minZ2
+                            then Intersection ((minX1, maxX1), (minY1, maxY1), (minZ1, minZ2 - 1)) ((minX1, maxX1), (minY1, maxY1), (minZ2, maxZ1))
+                            else
+                              if minZ1 <= maxZ2 && maxZ1 > maxZ2
+                                then Intersection ((minX1, maxX1), (minY1, maxY1), (minZ1, maxZ2)) ((minX1, maxX1), (minY1, maxY1), (maxZ2 + 1, maxZ1))
+                                else error "unreachable"
 
 countPoints :: Range3 -> Integer
 countPoints ((minX, maxX), (minY, maxY), (minZ, maxZ)) =
@@ -141,7 +140,7 @@ count exploring xs@((isOn, h) : t) =
   case compOrSplit exploring h of
     LeftInRight -> if isOn then countPoints exploring else 0
     NoIntersection -> count exploring t
-    Intesection a b -> count a xs + count b xs
+    Intersection a b -> count a xs + count b xs
 
 answer2 :: _ -> _
 answer2 xs =
