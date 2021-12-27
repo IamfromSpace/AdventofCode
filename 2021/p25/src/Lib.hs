@@ -32,20 +32,15 @@ import Test.Hspec (describe, it, shouldBe)
 import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, (++))
 
-data Dir
-  = R
-  | D
-  deriving (Show, Eq)
-
 type V2 = Vector (Integer, Integer)
 
 parse1 :: String -> _
 parse1 =
   Util.parseGrid
-    ( \p c m -> case c of
-        '>' -> Map.insert p R m
-        'v' -> Map.insert p D m
-        _ -> m
+    ( \p c (e, s) -> case c of
+        '>' -> (Set.insert p e, s)
+        'v' -> (e, Set.insert p s)
+        _ -> (e, s)
     )
     mempty
 
@@ -59,31 +54,39 @@ parse2 = parse1
  -
  -}
 
-step :: (Integer, Integer) -> Map (Integer, Integer) Dir -> Map (Integer, Integer) Dir
-step (maxX, maxY) original =
-  let down = filter ((==) D . snd) $ Map.toList original
-      right = filter ((==) R . snd) $ Map.toList original
-      f o =
-        foldl
-          ( \next ((x, y), d) ->
-              case d of
-                R ->
-                  let x' = (x + 1) `mod` maxX
-                   in case Map.lookup (x', y) o of
-                        Nothing -> Map.insert (x', y) d next
-                        Just _ -> Map.insert (x, y) d next
-                D ->
-                  let y' = (y + 1) `mod` maxY
-                   in case Map.lookup (x, y') o of
-                        Nothing -> Map.insert (x, y') d next
-                        Just _ -> Map.insert (x, y) d next
-          )
-          mempty
-      afterRs = f original right
-      right' = Map.toList afterRs
-   in foldl (\m (k, v) -> Map.insert k v m) (f (foldl (\m (k, v) -> Map.insert k v m) afterRs down) down) right'
+stepEast :: (Integer, Integer) -> (Set (Integer, Integer), Set (Integer, Integer)) -> (Set (Integer, Integer), Set (Integer, Integer))
+stepEast (maxX, _) (east, south) =
+  ( foldl
+      ( \s p@(x, y) ->
+          let p' = ((x + 1) `mod` maxX, y)
+           in if Set.member p' east || Set.member p' south
+                then Set.insert p s
+                else Set.insert p' s
+      )
+      mempty
+      (Set.toList east),
+    south
+  )
 
-findEq :: (Map (Integer, Integer) Dir -> Map (Integer, Integer) Dir) -> Integer -> Map (Integer, Integer) Dir -> Integer
+stepSouth :: (Integer, Integer) -> (Set (Integer, Integer), Set (Integer, Integer)) -> (Set (Integer, Integer), Set (Integer, Integer))
+stepSouth (_, maxY) (east, south) =
+  ( east,
+    foldl
+      ( \s p@(x, y) ->
+          let p' = (x, (y + 1) `mod` maxY)
+           in if Set.member p' east || Set.member p' south
+                then Set.insert p s
+                else Set.insert p' s
+      )
+      mempty
+      (Set.toList south)
+  )
+
+-- simplified a bit
+step :: (Integer, Integer) -> (Set (Integer, Integer), Set (Integer, Integer)) -> (Set (Integer, Integer), Set (Integer, Integer))
+step b = stepSouth b . stepEast b
+
+findEq :: Eq a => (a -> a) -> Integer -> a -> Integer
 findEq f i init =
   let next = f init
    in if next == init
