@@ -4,7 +4,9 @@ set -e
 
 # Convert
 CRF=36
-PRESET=veryslow
+# While more efficient compression is possible, the marginal cost of the CPU
+# time (Joules) far exceeds amount of money saved on storage.
+PRESET=veryfast
 CODEC=libx265
 NAME=${1%.*}
 EXT=${1##*.}
