@@ -1,0 +1,12 @@
+resolver: lts-18.28
+
+packages:
+- .
+
+extra-deps:
+- ../../util/haskell/advent-of-code
+- Hclip-3.0.0.4@sha256:df341c936594465df25c3b9f93f6ebe3110a36d64a51dbbd1dbd557394bbdba4,1648
+- clash-prelude-1.6.3
+- clash-lib-1.6.3
+- clash-ghc-1.6.3
+
