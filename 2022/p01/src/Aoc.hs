@@ -39,11 +39,15 @@ import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, (++))
 
 data State = State
-  { mostCarried :: Unsigned 16,
+  { most1Carried :: Unsigned 16,
+    most2Carried :: Unsigned 16,
+    most3Carried :: Unsigned 16,
+    top3Carried :: Unsigned 16,
     caloriesAccumulated :: Unsigned 16,
     snackAccumulated :: Unsigned 16,
     snackDone :: Bit,
-    outputSent :: Bit
+    output1Sent :: Bit,
+    output2Sent :: Bit
   }
   deriving stock (Generic)
   deriving anyclass (NFData, NFDataX, ToWave)
@@ -108,12 +112,18 @@ runT state (Tx 1 char) =
       if snackDone state == 1
         then
           let ca = caloriesAccumulated state
-              mc = mostCarried state
-           in ( state
-                  { mostCarried = max ca mc,
+              m1c = most1Carried state
+              m2c = most2Carried state
+              m3c = most3Carried state
+              state' =
+                state
+                  { most1Carried = max ca m1c,
+                    most2Carried = max (min ca m1c) m2c,
+                    most3Carried = max (min ca m2c) m3c,
                     caloriesAccumulated = 0,
                     snackDone = 0
-                  },
+                  }
+           in ( state' {top3Carried = most1Carried state' + most2Carried state' + most3Carried state'},
                 (Tx 0 (Answer 0 0))
               )
         else
@@ -127,20 +137,31 @@ runT state (Tx 1 char) =
                 (Tx 0 (Answer 0 0))
               )
 runT state (Tx 0 _) =
-  if outputSent state == 1
+  if output2Sent state == 1
     then (state, (Tx 0 (Answer 0 0)))
     else
-      let (rem, out) = mostCarried state `divMod` 10
-          done = rem == 0
-       in ( state
-              { mostCarried = rem,
-                outputSent = if done then 1 else 0
-              },
-            (Tx 1 (Answer 0 (digitToChar out)))
-          )
+      if output1Sent state == 1
+        then
+          let (rem, out) = top3Carried state `divMod` 10
+              done = rem == 0
+           in ( state
+                  { top3Carried = rem,
+                    output2Sent = if done then 1 else 0
+                  },
+                (Tx 1 (Answer 1 (digitToChar out)))
+              )
+        else
+          let (rem, out) = most1Carried state `divMod` 10
+              done = rem == 0
+           in ( state
+                  { most1Carried = rem,
+                    output1Sent = if done then 1 else 0
+                  },
+                (Tx 1 (Answer 0 (digitToChar out)))
+              )
 
 run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx Answer)
-run = mealy runT (State 0 0 0 0 0)
+run = mealy runT (State 0 0 0 0 0 0 0 0 0)
 
 topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx Answer)
 topEntity = exposeClockResetEnable run
@@ -148,8 +169,11 @@ topEntity = exposeClockResetEnable run
 testInput :: Vec 56 Char
 testInput = $(listToVecTH "1000\n2000\n3000\n\n4000\n\n5000\n6000\n\n7000\n8000\n9000\n\n10000\n\n")
 
-testOutput :: Vec 5 Char
-testOutput = $(listToVecTH (reverse "24000"))
+testOutput1 :: Vec 5 Char
+testOutput1 = $(listToVecTH (reverse "24000"))
+
+testOutput2 :: Vec 5 Char
+testOutput2 = $(listToVecTH (reverse "45000"))
 
 mkTestInput :: Clock System -> Reset System -> Signal System TxChar
 mkTestInput clk rst =
@@ -174,7 +198,7 @@ copyWavedrom =
       rst = systemResetGen
       testInput = mkTestInput clk rst
       out = InOut <$> testInput <*> topEntity clk rst en testInput
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 16 "" out
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 80 "" out
 
 testBench :: Signal System Bool
 testBench =
@@ -186,7 +210,8 @@ testBench =
           clk
           rst
           ( (fmap (const (Tx 0 (Answer 0 0))) testInput)
-              ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput)
+              ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput1)
+              ++ (fmap (Tx 2 . Answer 0 . fromIntegral . ord) testOutput2)
               ++ (Tx 0 (Answer 0 0) :> Nil)
           )
       done = expectOutput (topEntity clk rst en (mkTestInput clk rst))
