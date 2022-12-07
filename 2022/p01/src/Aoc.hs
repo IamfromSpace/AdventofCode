@@ -115,15 +115,17 @@ runT state (Tx 1 char) =
               m1c = most1Carried state
               m2c = most2Carried state
               m3c = most3Carried state
-              state' =
-                state
-                  { most1Carried = max ca m1c,
-                    most2Carried = max (min ca m1c) m2c,
-                    most3Carried = max (min ca m2c) m3c,
+              m1c' = max ca m1c
+              m2c' = max (min ca m1c) m2c
+              m3c' = max (min ca m2c) m3c
+           in ( state
+                  { most1Carried = m1c',
+                    most2Carried = m2c',
+                    most3Carried = m3c',
+                    top3Carried = m1c' + m2c' + m3c',
                     caloriesAccumulated = 0,
                     snackDone = 0
-                  }
-           in ( state' {top3Carried = most1Carried state' + most2Carried state' + most3Carried state'},
+                  },
                 (Tx 0 (Answer 0 0))
               )
         else
