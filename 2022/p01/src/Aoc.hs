@@ -39,9 +39,9 @@ import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, (++))
 
 data State = State
-  { mostCarried :: Unsigned 64,
-    caloriesAccumulated :: Unsigned 64,
-    snackAccumulated :: Unsigned 64,
+  { mostCarried :: Unsigned 16,
+    caloriesAccumulated :: Unsigned 16,
+    snackAccumulated :: Unsigned 16,
     snackDone :: Bit,
     outputSent :: Bit
   }
@@ -55,7 +55,7 @@ data TxChar = TxChar
   deriving stock (Generic, Eq)
   deriving anyclass (NFData, NFDataX, ShowX, ToWave)
 
-parseDigit :: Unsigned 8 -> Maybe (Unsigned 64)
+parseDigit :: Unsigned 8 -> Maybe (Unsigned 16)
 parseDigit 10 = Nothing
 parseDigit 48 = Just 0
 parseDigit 49 = Just 1
@@ -69,7 +69,7 @@ parseDigit 56 = Just 8
 parseDigit 57 = Just 9
 parseDigit _ = undefined
 
-digitToChar :: Unsigned 64 -> Unsigned 8
+digitToChar :: Unsigned 16 -> Unsigned 8
 digitToChar 0 = 48
 digitToChar 1 = 49
 digitToChar 2 = 50
@@ -165,7 +165,7 @@ copyWavedrom =
       rst = systemResetGen
       testInput = mkTestInput clk rst
       out = InOut <$> testInput <*> topEntity clk rst en testInput
-  in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 64 "" out
+  in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 16 "" out
 
 testBench :: Signal System Bool
 testBench =
