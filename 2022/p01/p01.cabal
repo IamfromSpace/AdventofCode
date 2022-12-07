@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: bd25933100458e69f83276b65bda0f569a5ebdef60445b65bcf6c3b2afa5baed
+-- hash: 758bb7dba8789c7f8c6a05cd61f2fd783bf88b9a66c0760b83bbce509b99a9ca
 
 name:           p01
 version:        0.1.0.0
@@ -24,7 +24,7 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Aoc
   other-modules:
       Paths_p01
   hs-source-dirs:
@@ -36,8 +36,10 @@ library
     , base >=4.7 && <5
     , bytestring
     , clash-prelude >=1.6.3 && <1.8
+    , clash-wavedrom
     , containers
     , cryptohash-md5
+    , deepseq
     , ghc-typelits-extra
     , ghc-typelits-knownnat
     , ghc-typelits-natnormalise
@@ -64,8 +66,10 @@ executable clash
     , bytestring
     , clash-ghc
     , clash-prelude >=1.6.3 && <1.8
+    , clash-wavedrom
     , containers
     , cryptohash-md5
+    , deepseq
     , ghc-typelits-extra
     , ghc-typelits-knownnat
     , ghc-typelits-natnormalise
@@ -93,8 +97,10 @@ executable clashi
     , bytestring
     , clash-ghc
     , clash-prelude >=1.6.3 && <1.8
+    , clash-wavedrom
     , containers
     , cryptohash-md5
+    , deepseq
     , ghc-typelits-extra
     , ghc-typelits-knownnat
     , ghc-typelits-natnormalise
@@ -122,8 +128,10 @@ test-suite p01-test
     , base >=4.7 && <5
     , bytestring
     , clash-prelude >=1.6.3 && <1.8
+    , clash-wavedrom
     , containers
     , cryptohash-md5
+    , deepseq
     , ghc-typelits-extra
     , ghc-typelits-knownnat
     , ghc-typelits-natnormalise

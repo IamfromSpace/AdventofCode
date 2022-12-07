@@ -32,6 +32,17 @@ packages:
       sha256: e765732f01bdff54dee590b093734a9b308b5f4b26d6ebd6b658974e91602a63
   original:
     hackage: clash-ghc-1.6.3
+- completed:
+    name: clash-wavedrom
+    version: 0.0.0.0
+    git: https://github.com/expipiplus1/clash-wavedrom
+    pantry-tree:
+      size: 2065
+      sha256: eec9114c92b202e05906bc1dd5f72a2cce43e3889d985f457ab7f54799531ad6
+    commit: f2cec861ff227ad574c0b4e7208cf72f9964b3f3
+  original:
+    git: https://github.com/expipiplus1/clash-wavedrom
+    commit: f2cec861ff227ad574c0b4e7208cf72f9964b3f3
 snapshots:
 - completed:
     size: 590100
