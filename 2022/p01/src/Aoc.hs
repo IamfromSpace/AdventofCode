@@ -48,12 +48,21 @@ data State = State
   deriving stock (Generic)
   deriving anyclass (NFData, NFDataX, ToWave)
 
-data TxChar = TxChar
+data Tx a = Tx
   { tx :: Bit,
+    d :: a
+  }
+  deriving stock (Generic, Eq)
+  deriving anyclass (NFData, NFDataX, ShowX, ToWave)
+
+data Answer = Answer
+  { part :: Bit,
     char :: Unsigned 8
   }
   deriving stock (Generic, Eq)
   deriving anyclass (NFData, NFDataX, ShowX, ToWave)
+
+type TxChar = Tx (Unsigned 8)
 
 parseDigit :: Unsigned 8 -> Maybe (Unsigned 16)
 parseDigit 10 = Nothing
@@ -84,8 +93,8 @@ digitToChar _ = undefined
 
 -- Must send two returns
 -- Output is little endian
-runT :: State -> TxChar -> (State, TxChar)
-runT state (TxChar 1 char) =
+runT :: State -> TxChar -> (State, Tx Answer)
+runT state (Tx 1 char) =
   case parseDigit char of
     Just d ->
       let sa = snackAccumulated state
@@ -93,7 +102,7 @@ runT state (TxChar 1 char) =
               { snackAccumulated = 10 * sa + d,
                 snackDone = 0
               },
-            (TxChar 0 0)
+            (Tx 0 (Answer 0 0))
           )
     Nothing ->
       if snackDone state == 1
@@ -105,7 +114,7 @@ runT state (TxChar 1 char) =
                     caloriesAccumulated = 0,
                     snackDone = 0
                   },
-                (TxChar 0 0)
+                (Tx 0 (Answer 0 0))
               )
         else
           let sa = snackAccumulated state
@@ -115,11 +124,11 @@ runT state (TxChar 1 char) =
                     snackAccumulated = 0,
                     snackDone = 1
                   },
-                (TxChar 0 0)
+                (Tx 0 (Answer 0 0))
               )
-runT state (TxChar 0 _) =
+runT state (Tx 0 _) =
   if outputSent state == 1
-    then (state, (TxChar 0 0))
+    then (state, (Tx 0 (Answer 0 0)))
     else
       let (rem, out) = mostCarried state `divMod` 10
           done = rem == 0
@@ -127,13 +136,13 @@ runT state (TxChar 0 _) =
               { mostCarried = rem,
                 outputSent = if done then 1 else 0
               },
-            (TxChar 1 (digitToChar out))
+            (Tx 1 (Answer 0 (digitToChar out)))
           )
 
-run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom TxChar
+run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx Answer)
 run = mealy runT (State 0 0 0 0 0)
 
-topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System TxChar
+topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx Answer)
 topEntity = exposeClockResetEnable run
 
 testInput :: Vec 56 Char
@@ -147,8 +156,8 @@ mkTestInput clk rst =
   stimuliGenerator
     clk
     rst
-    ( ( fmap (TxChar 1 . fromIntegral . ord) testInput)
-        ++ (TxChar 0 0 :> Nil)
+    ( (fmap (Tx 1 . fromIntegral . ord) testInput)
+        ++ (Tx 0 0 :> Nil)
     )
 
 data InOut a b = InOut
@@ -165,7 +174,7 @@ copyWavedrom =
       rst = systemResetGen
       testInput = mkTestInput clk rst
       out = InOut <$> testInput <*> topEntity clk rst en testInput
-  in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 16 "" out
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 16 "" out
 
 testBench :: Signal System Bool
 testBench =
@@ -176,9 +185,9 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( ( fmap (const (TxChar 0 0)) testInput )
-              ++ ( fmap (TxChar 1 . fromIntegral . ord) testOutput )
-              ++ (TxChar 0 0 :> Nil)
+          ( (fmap (const (Tx 0 (Answer 0 0))) testInput)
+              ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput)
+              ++ (Tx 0 (Answer 0 0) :> Nil)
           )
       done = expectOutput (topEntity clk rst en (mkTestInput clk rst))
    in done
