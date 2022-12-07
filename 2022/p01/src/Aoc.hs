@@ -39,12 +39,12 @@ import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, (++))
 
 data State = State
-  { most1Carried :: Unsigned 16,
-    most2Carried :: Unsigned 16,
-    most3Carried :: Unsigned 16,
-    top3Carried :: Unsigned 16,
-    caloriesAccumulated :: Unsigned 16,
-    snackAccumulated :: Unsigned 16,
+  { most1Carried :: Unsigned 32,
+    most2Carried :: Unsigned 32,
+    most3Carried :: Unsigned 32,
+    top3Carried :: Unsigned 32,
+    caloriesAccumulated :: Unsigned 32,
+    snackAccumulated :: Unsigned 32,
     snackDone :: Bit,
     output1Sent :: Bit,
     output2Sent :: Bit
@@ -68,7 +68,7 @@ data Answer = Answer
 
 type TxChar = Tx (Unsigned 8)
 
-parseDigit :: Unsigned 8 -> Maybe (Unsigned 16)
+parseDigit :: Unsigned 8 -> Maybe (Unsigned 32)
 parseDigit 10 = Nothing
 parseDigit 48 = Just 0
 parseDigit 49 = Just 1
@@ -82,7 +82,7 @@ parseDigit 56 = Just 8
 parseDigit 57 = Just 9
 parseDigit _ = undefined
 
-digitToChar :: Unsigned 16 -> Unsigned 8
+digitToChar :: Unsigned 32 -> Unsigned 8
 digitToChar 0 = 48
 digitToChar 1 = 49
 digitToChar 2 = 50
