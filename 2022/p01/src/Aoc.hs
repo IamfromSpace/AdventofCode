@@ -1,7 +1,7 @@
 module Aoc where
 
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
-import Clash.Prelude (Bit, Clock, Enable, HiddenClockResetEnable, Reset, Signal, System, Unsigned, enableGen, exposeClockResetEnable, mealy, systemResetGen)
+import Clash.Prelude (Bit, Clock, Enable, HiddenClockResetEnable, Reset, Signal, System, Unsigned, enableGen, exposeClockResetEnable, mealy, register, systemResetGen)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
 import Clash.WaveDrom (ToWave, render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
@@ -45,7 +45,6 @@ data State = State
     top3Carried :: Unsigned 32,
     caloriesAccumulated :: Unsigned 32,
     snackAccumulated :: Unsigned 32,
-    snackDone :: Bit,
     output1Sent :: Bit,
     output2Sent :: Bit
   }
@@ -80,7 +79,7 @@ parseDigit 54 = Just 6
 parseDigit 55 = Just 7
 parseDigit 56 = Just 8
 parseDigit 57 = Just 9
-parseDigit _ = undefined
+parseDigit _ = Nothing
 
 digitToChar :: Unsigned 32 -> Unsigned 8
 digitToChar 0 = 48
@@ -95,49 +94,57 @@ digitToChar 8 = 56
 digitToChar 9 = 57
 digitToChar _ = undefined
 
+type Feed = Either Bit (Unsigned 32)
+
+-- Ideally Tx is added later, we don't really care about it here
+inputT :: Bit -> Tx (Unsigned 8) -> (Bit, Tx Feed)
+inputT 0 (Tx x char) =
+  case parseDigit char of
+    Nothing ->
+      (1, Tx x (Left 0))
+    Just d ->
+      (0, Tx x (Right d))
+inputT 1 (Tx x char) =
+  case parseDigit char of
+    Nothing ->
+      (0, Tx x (Left 1))
+    Just d ->
+      (0, Tx x (Right d))
+
 -- Must send two returns
 -- Output is little endian
-runT :: State -> TxChar -> (State, Tx Answer)
-runT state (Tx 1 char) =
-  case parseDigit char of
-    Just d ->
-      let sa = snackAccumulated state
-       in ( state
-              { snackAccumulated = 10 * sa + d,
-                snackDone = 0
-              },
-            (Tx 0 (Answer 0 0))
-          )
-    Nothing ->
-      if snackDone state == 1
-        then
-          let ca = caloriesAccumulated state
-              m1c = most1Carried state
-              m2c = most2Carried state
-              m3c = most3Carried state
-              m1c' = max ca m1c
-              m2c' = max (min ca m1c) m2c
-              m3c' = max (min ca m2c) m3c
-           in ( state
-                  { most1Carried = m1c',
-                    most2Carried = m2c',
-                    most3Carried = m3c',
-                    top3Carried = m1c' + m2c' + m3c',
-                    caloriesAccumulated = 0,
-                    snackDone = 0
-                  },
-                (Tx 0 (Answer 0 0))
-              )
-        else
-          let sa = snackAccumulated state
-              ca = caloriesAccumulated state
-           in ( state
-                  { caloriesAccumulated = ca + sa,
-                    snackAccumulated = 0,
-                    snackDone = 1
-                  },
-                (Tx 0 (Answer 0 0))
-              )
+runT :: State -> Tx Feed -> (State, Tx Answer)
+runT state (Tx 1 (Right d)) =
+  let sa = snackAccumulated state
+   in ( state {snackAccumulated = 10 * sa + d},
+        Tx 0 (Answer 0 0)
+      )
+runT state (Tx 1 (Left 1)) =
+  let ca = caloriesAccumulated state
+      m1c = most1Carried state
+      m2c = most2Carried state
+      m3c = most3Carried state
+      m1c' = max ca m1c
+      m2c' = max (min ca m1c) m2c
+      m3c' = max (min ca m2c) m3c
+   in ( state
+          { most1Carried = m1c',
+            most2Carried = m2c',
+            most3Carried = m3c',
+            top3Carried = m1c' + m2c' + m3c',
+            caloriesAccumulated = 0
+          },
+        (Tx 0 (Answer 0 0))
+      )
+runT state (Tx 1 (Left 0)) =
+  let sa = snackAccumulated state
+      ca = caloriesAccumulated state
+   in ( state
+          { caloriesAccumulated = ca + sa,
+            snackAccumulated = 0
+          },
+        (Tx 0 (Answer 0 0))
+      )
 runT state (Tx 0 _) =
   if output2Sent state == 1
     then (state, (Tx 0 (Answer 0 0)))
@@ -163,7 +170,7 @@ runT state (Tx 0 _) =
               )
 
 run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx Answer)
-run = mealy runT (State 0 0 0 0 0 0 0 0 0)
+run = mealy runT (State 0 0 0 0 0 0 0 0) . register (Tx 1 (Right 1)) . mealy inputT 0
 
 topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx Answer)
 topEntity = exposeClockResetEnable run
