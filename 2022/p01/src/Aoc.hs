@@ -151,14 +151,13 @@ runT state (Tx 0 _) =
 --   0: Wating to finish
 --   1: Sending problem 1
 --   2: Sending problem 2
---   3: Waiting for next send
-outputT :: (Unsigned 2, Unsigned 32, Unsigned 32) -> Maybe (Unsigned 32, Unsigned 32, Unsigned 32) -> ((Unsigned 2, Unsigned 32, Unsigned 32), Tx (Answer (Unsigned 32)))
-outputT (0, _, _) Nothing =
+outputT :: (Unsigned 2, Unsigned 32, Unsigned 32) -> Maybe (Unsigned 32, Unsigned 32) -> ((Unsigned 2, Unsigned 32, Unsigned 32), Tx (Answer (Unsigned 32)))
+outputT s@(0, _, _) Nothing =
   -- Still waiting for input/calc to finish
-  ((0, 0, 0), (Tx 0 (Answer 0 0)))
-outputT (0, _, _) (Just (one, two, three)) =
+  (s, (Tx 0 (Answer 0 0)))
+outputT (0, _, _) (Just (p1, p2)) =
   -- output just finish, grab it
-  ((1, one, one + two + three), Tx 0 (Answer 0 0))
+  ((1, p1, p2), Tx 0 (Answer 0 0))
 outputT (1, p1, p2) _ =
   -- Need to send answer 1
   let (rem, out) = p1 `divMod` 10
@@ -179,6 +178,10 @@ run =
   fmap (\(Tx x (Answer a c)) -> Tx x (Answer a (digitToChar c)))
     . register (Tx 0 (Answer 0 0))
     . mealy outputT (0, 0, 0)
+    . register Nothing
+    . fmap (fmap (\(one, twoAndThree) -> (one, one + twoAndThree)) )
+    . register Nothing
+    . fmap (fmap (\(one, two, three) -> (one, two + three)) )
     . register Nothing
     . mealy runT (State 0 0 0 0 0 0)
     . register (Tx 0 (Right 0))
