@@ -1,5 +1,6 @@
 module Aoc where
 
+import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
 import Clash.Prelude (Bit, Clock, Enable, HiddenClockResetEnable, Reset, Signal, System, Unsigned, enableGen, exposeClockResetEnable, mealy, register, systemResetGen)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
@@ -42,11 +43,9 @@ data State = State
   { most1Carried :: Unsigned 32,
     most2Carried :: Unsigned 32,
     most3Carried :: Unsigned 32,
-    top3Carried :: Unsigned 32,
     caloriesAccumulated :: Unsigned 32,
     snackAccumulated :: Unsigned 32,
-    output1Sent :: Bit,
-    output2Sent :: Bit
+    notSent :: Bit
   }
   deriving stock (Generic)
   deriving anyclass (NFData, NFDataX, ToWave)
@@ -82,59 +81,50 @@ parseDigit 57 = Just 9
 parseDigit _ = Nothing
 
 digitToChar :: Unsigned 32 -> Unsigned 8
-digitToChar 0 = 48
-digitToChar 1 = 49
-digitToChar 2 = 50
-digitToChar 3 = 51
-digitToChar 4 = 52
-digitToChar 5 = 53
-digitToChar 6 = 54
-digitToChar 7 = 55
-digitToChar 8 = 56
-digitToChar 9 = 57
-digitToChar _ = undefined
+digitToChar = (+) 48 . (resize :: Unsigned 32 -> Unsigned 8)
 
+-- Left 0 -> EndSnack
+-- Left 1 -> EndElf
+-- Right d -> Next Digit
 type Feed = Either Bit (Unsigned 32)
 
--- Ideally Tx is added later, we don't really care about it here
+-- State is the number of preceeding new lines
 inputT :: Bit -> Tx (Unsigned 8) -> (Bit, Tx Feed)
-inputT 0 (Tx x char) =
+inputT 0 (Tx 1 char) =
   case parseDigit char of
     Nothing ->
-      (1, Tx x (Left 0))
+      (1, Tx 1 (Left 0))
     Just d ->
-      (0, Tx x (Right d))
-inputT 1 (Tx x char) =
+      (0, Tx 1 (Right d))
+inputT 1 (Tx 1 char) =
   case parseDigit char of
     Nothing ->
-      (0, Tx x (Left 1))
+      (0, Tx 1 (Left 1))
     Just d ->
-      (0, Tx x (Right d))
+      (0, Tx 1 (Right d))
+inputT _ (Tx 0 _) =
+  (0, Tx 0 (Left 0))
 
 -- Must send two returns
 -- Output is little endian
-runT :: State -> Tx Feed -> (State, Tx Answer)
+runT :: State -> Tx Feed -> (State, Maybe (Unsigned 32, Unsigned 32, Unsigned 32))
 runT state (Tx 1 (Right d)) =
   let sa = snackAccumulated state
-   in ( state {snackAccumulated = 10 * sa + d},
-        Tx 0 (Answer 0 0)
+   in ( state {snackAccumulated = 10 * sa + d, notSent = 1},
+        Nothing
       )
 runT state (Tx 1 (Left 1)) =
   let ca = caloriesAccumulated state
       m1c = most1Carried state
       m2c = most2Carried state
       m3c = most3Carried state
-      m1c' = max ca m1c
-      m2c' = max (min ca m1c) m2c
-      m3c' = max (min ca m2c) m3c
    in ( state
-          { most1Carried = m1c',
-            most2Carried = m2c',
-            most3Carried = m3c',
-            top3Carried = m1c' + m2c' + m3c',
+          { most1Carried = max ca m1c,
+            most2Carried = max (min ca m1c) m2c,
+            most3Carried = max (min ca m2c) m3c,
             caloriesAccumulated = 0
           },
-        (Tx 0 (Answer 0 0))
+        Nothing
       )
 runT state (Tx 1 (Left 0)) =
   let sa = snackAccumulated state
@@ -143,34 +133,54 @@ runT state (Tx 1 (Left 0)) =
           { caloriesAccumulated = ca + sa,
             snackAccumulated = 0
           },
-        (Tx 0 (Answer 0 0))
+        Nothing
       )
 runT state (Tx 0 _) =
-  if output2Sent state == 1
-    then (state, (Tx 0 (Answer 0 0)))
-    else
-      if output1Sent state == 1
-        then
-          let (rem, out) = top3Carried state `divMod` 10
-              done = rem == 0
-           in ( state
-                  { top3Carried = rem,
-                    output2Sent = if done then 1 else 0
-                  },
-                (Tx 1 (Answer 1 (digitToChar out)))
-              )
-        else
-          let (rem, out) = most1Carried state `divMod` 10
-              done = rem == 0
-           in ( state
-                  { most1Carried = rem,
-                    output1Sent = if done then 1 else 0
-                  },
-                (Tx 1 (Answer 0 (digitToChar out)))
-              )
+  if notSent state == 1
+    then
+      ( State 0 0 0 0 0 0,
+        Just
+          ( most1Carried state,
+            most2Carried state,
+            most3Carried state
+          )
+      )
+    else (state, Nothing)
+
+-- states are:
+--   0: Wating to finish
+--   1: Sending problem 1
+--   2: Sending problem 2
+--   3: Waiting for next send
+outputT :: (Unsigned 2, Unsigned 32, Unsigned 32) -> Maybe (Unsigned 32, Unsigned 32, Unsigned 32) -> ((Unsigned 2, Unsigned 32, Unsigned 32), Tx Answer)
+outputT (0, _, _) Nothing =
+  -- Still waiting for input/calc to finish
+  ((0, 0, 0), (Tx 0 (Answer 0 0)))
+outputT (0, _, _) (Just (one, two, three)) =
+  -- output just finish, grab it
+  ((1, one, one + two + three), Tx 0 (Answer 0 0))
+outputT (1, p1, p2) _ =
+  -- Need to send answer 1
+  let (rem, out) = p1 `divMod` 10
+      done = rem == 0
+   in ( (if done then 2 else 1, rem, p2),
+        (Tx 1 (Answer 0 (digitToChar out)))
+      )
+outputT (2, _, p2) _ =
+  -- Need to send answer 2
+  let (rem, out) = p2 `divMod` 10
+      done = rem == 0
+   in ( (if done then 0 else 2, 0, rem),
+        (Tx 1 (Answer 1 (digitToChar out)))
+      )
 
 run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx Answer)
-run = mealy runT (State 0 0 0 0 0 0 0 0) . register (Tx 1 (Right 1)) . mealy inputT 0
+run =
+  mealy outputT (0, 0, 0)
+    . register Nothing
+    . mealy runT (State 0 0 0 0 0 0)
+    . register (Tx 0 (Right 0))
+    . mealy inputT 0
 
 topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx Answer)
 topEntity = exposeClockResetEnable run
@@ -189,7 +199,8 @@ mkTestInput clk rst =
   stimuliGenerator
     clk
     rst
-    ( (fmap (Tx 1 . fromIntegral . ord) testInput)
+    ( (Tx 0 0 :> Nil)
+        ++ (fmap (Tx 1 . fromIntegral . ord) testInput)
         ++ (Tx 0 0 :> Nil)
     )
 
@@ -218,7 +229,8 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( (fmap (const (Tx 0 (Answer 0 0))) testInput)
+          ( (Tx 0 (Answer 0 0) :> Nil)
+              ++ (fmap (const (Tx 0 (Answer 0 0))) testInput)
               ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput1)
               ++ (fmap (Tx 2 . Answer 0 . fromIntegral . ord) testOutput2)
               ++ (Tx 0 (Answer 0 0) :> Nil)
