@@ -57,9 +57,9 @@ data Tx a = Tx
   deriving stock (Generic, Eq)
   deriving anyclass (NFData, NFDataX, ShowX, ToWave)
 
-data Answer = Answer
+data Answer a = Answer
   { part :: Bit,
-    char :: Unsigned 8
+    char :: a
   }
   deriving stock (Generic, Eq)
   deriving anyclass (NFData, NFDataX, ShowX, ToWave)
@@ -152,7 +152,7 @@ runT state (Tx 0 _) =
 --   1: Sending problem 1
 --   2: Sending problem 2
 --   3: Waiting for next send
-outputT :: (Unsigned 2, Unsigned 32, Unsigned 32) -> Maybe (Unsigned 32, Unsigned 32, Unsigned 32) -> ((Unsigned 2, Unsigned 32, Unsigned 32), Tx Answer)
+outputT :: (Unsigned 2, Unsigned 32, Unsigned 32) -> Maybe (Unsigned 32, Unsigned 32, Unsigned 32) -> ((Unsigned 2, Unsigned 32, Unsigned 32), Tx (Answer (Unsigned 32)))
 outputT (0, _, _) Nothing =
   -- Still waiting for input/calc to finish
   ((0, 0, 0), (Tx 0 (Answer 0 0)))
@@ -164,25 +164,27 @@ outputT (1, p1, p2) _ =
   let (rem, out) = p1 `divMod` 10
       done = rem == 0
    in ( (if done then 2 else 1, rem, p2),
-        (Tx 1 (Answer 0 (digitToChar out)))
+        (Tx 1 (Answer 0 out))
       )
 outputT (2, _, p2) _ =
   -- Need to send answer 2
   let (rem, out) = p2 `divMod` 10
       done = rem == 0
    in ( (if done then 0 else 2, 0, rem),
-        (Tx 1 (Answer 1 (digitToChar out)))
+        (Tx 1 (Answer 1 out))
       )
 
-run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx Answer)
+run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx (Answer (Unsigned 8)))
 run =
-  mealy outputT (0, 0, 0)
+  fmap (\(Tx x (Answer a c)) -> Tx x (Answer a (digitToChar c)))
+    . register (Tx 0 (Answer 0 0))
+    . mealy outputT (0, 0, 0)
     . register Nothing
     . mealy runT (State 0 0 0 0 0 0)
     . register (Tx 0 (Right 0))
     . mealy inputT 0
 
-topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx Answer)
+topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx (Answer (Unsigned 8)))
 topEntity = exposeClockResetEnable run
 
 testInput :: Vec 56 Char
