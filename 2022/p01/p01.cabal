@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 758bb7dba8789c7f8c6a05cd61f2fd783bf88b9a66c0760b83bbce509b99a9ca
+-- hash: cd864f6feafd8abd376d99824601582b95bf3463c40c4d1e5b5ecc84467772c9
 
 name:           p01
 version:        0.1.0.0
@@ -36,6 +36,7 @@ library
     , base >=4.7 && <5
     , bytestring
     , clash-prelude >=1.6.3 && <1.8
+    , clash-utils
     , clash-wavedrom
     , containers
     , cryptohash-md5
@@ -66,6 +67,7 @@ executable clash
     , bytestring
     , clash-ghc
     , clash-prelude >=1.6.3 && <1.8
+    , clash-utils
     , clash-wavedrom
     , containers
     , cryptohash-md5
@@ -97,6 +99,7 @@ executable clashi
     , bytestring
     , clash-ghc
     , clash-prelude >=1.6.3 && <1.8
+    , clash-utils
     , clash-wavedrom
     , containers
     , cryptohash-md5
@@ -128,6 +131,7 @@ test-suite p01-test
     , base >=4.7 && <5
     , bytestring
     , clash-prelude >=1.6.3 && <1.8
+    , clash-utils
     , clash-wavedrom
     , containers
     , cryptohash-md5

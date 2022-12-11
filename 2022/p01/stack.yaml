@@ -11,4 +11,5 @@ extra-deps:
 - clash-ghc-1.6.3
 - git: https://github.com/expipiplus1/clash-wavedrom
   commit: f2cec861ff227ad574c0b4e7208cf72f9964b3f3
-
+- git: https://github.com/iamfromspace/clash-utils
+  commit: 6972bde2e31c76b486f964c94f9dd84b99028ed6

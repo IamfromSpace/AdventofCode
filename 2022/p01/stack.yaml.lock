@@ -43,6 +43,17 @@ packages:
   original:
     git: https://github.com/expipiplus1/clash-wavedrom
     commit: f2cec861ff227ad574c0b4e7208cf72f9964b3f3
+- completed:
+    name: clash-utils
+    version: 0.1.0.0
+    git: https://github.com/iamfromspace/clash-utils
+    pantry-tree:
+      size: 9358
+      sha256: 92d8672e7370a0e11e19a79816e2135242b60b72a6628b301e5a6a5bacd65fce
+    commit: 6972bde2e31c76b486f964c94f9dd84b99028ed6
+  original:
+    git: https://github.com/iamfromspace/clash-utils
+    commit: 6972bde2e31c76b486f964c94f9dd84b99028ed6
 snapshots:
 - completed:
     size: 590100

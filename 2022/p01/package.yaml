@@ -12,6 +12,7 @@ dependencies:
   - base >= 4.7 && < 5
   - bytestring
   - clash-prelude  >= 1.6.3 && < 1.8
+  - clash-utils
   - clash-wavedrom
   - containers
   - cryptohash-md5
