@@ -4,7 +4,7 @@ import Clash.Arithmetic.BCD (bcdToAscii, toDec)
 import Clash.Class.BitPack (BitPack (pack, unpack))
 import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
-import Clash.Prelude (Bit, Clock, Enable, HiddenClockResetEnable, Reset, Signal, System, Unsigned, enableGen, exposeClockResetEnable, mealy, register, systemResetGen)
+import Clash.Prelude (Bit, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replicate, systemResetGen)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import Clash.WaveDrom (ToWave, render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
@@ -39,7 +39,7 @@ import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
 import System.Hclip (setClipboard)
 import Text.Read (readMaybe)
-import Prelude hiding (foldr, init, lookup, map, (!!), (++))
+import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 data State = State
   { most1Carried :: Unsigned 32,
@@ -180,14 +180,12 @@ outputT (2, n, p1, p2) _ =
         (Tx 1 (Answer 1 (p2 !! n)))
       )
 
-tenOs = 0 :> 0 :> 0 :> 0 :> 0 :> 0 :> 0 :> 0 :> 0 :> 0 :> Nil
-
 -- outputs leading zeros
 run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx (Answer (Unsigned 8)))
 run =
   fmap (\(Tx x (Answer p a)) -> Tx x (Answer p (unpack (bcdToAscii (pack a)))))
     -- Faster not to register
-    . mealy outputT (0, 0, tenOs, tenOs)
+    . mealy outputT (0, 0, repeat 0, repeat 0)
     . register Nothing
     . fmap (fmap (\(one, two) -> (one, (toDec (pack two)) :: Vec 10 (Unsigned 4))))
     -- Faster not to register
@@ -248,9 +246,7 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( (Tx 0 (Answer 0 48) :> Nil)
-              ++ (fmap (const (Tx 0 (Answer 0 48))) testInput)
-              ++ ( Tx 0 (Answer 0 48) :> Tx 0 (Answer 0 48) :> Tx 0 (Answer 0 48) :> Nil)
+          ( replicate (addSNat (SNat :: SNat 4) (lengthS testInput)) (Tx 0 (Answer 0 48))
               ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput1)
               ++ (fmap (Tx 1 . Answer 1 . fromIntegral . ord) testOutput2)
               ++ (Tx 0 (Answer 0 48) :> Nil)
