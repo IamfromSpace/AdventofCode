@@ -1,7 +1,7 @@
 module Aoc where
 
-import Clash.Arithmetic.BCD (bcdToAscii, toDec)
-import Clash.Class.BitPack (BitPack (pack, unpack))
+import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
+import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
 import Clash.Prelude (Bit, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replicate, systemResetGen)
@@ -145,6 +145,29 @@ runT state (Tx 0 _) =
       )
     else (state, Nothing)
 
+-- NOTE: no backpressure!  If this isn't done and new data is received, it's
+-- just dropped!
+bcd32T ::
+  Maybe (Unsigned 32, Unsigned 32, Unsigned 5, Vec 10 (Unsigned 4), Vec 10 (Unsigned 4)) ->
+  Maybe (Unsigned 32, Unsigned 32) ->
+  ( Maybe (Unsigned 32, Unsigned 32, Unsigned 5, Vec 10 (Unsigned 4), Vec 10 (Unsigned 4)),
+    Maybe (Vec 10 (Unsigned 4), Vec 10 (Unsigned 4))
+  )
+bcd32T Nothing Nothing =
+  -- Nothing in progress, no new values to convert
+  (Nothing, Nothing)
+bcd32T Nothing (Just (a, b)) =
+  -- New values to convert
+  (Just (a, b, 31, repeat 0, repeat 0), Nothing)
+bcd32T (Just (a, b, n, aBcd, bBcd)) _ =
+  -- Convert values in progress
+  let aBcd' = convertStep (a ! n) aBcd
+      bBcd' = convertStep (b ! n) bBcd
+      done = n == 0
+   in if done
+        then (Nothing, Just (aBcd', bBcd'))
+        else (Just (a, b, (n - 1), aBcd', bBcd'), Nothing)
+
 -- states are:
 --   0: Wating to finish
 --   1: Sending problem 1
@@ -184,19 +207,17 @@ outputT (2, n, p1, p2) _ =
 run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx (Answer (Unsigned 8)))
 run =
   fmap (\(Tx x (Answer p a)) -> Tx x (Answer p (unpack (bcdToAscii (pack a)))))
-    -- Faster not to register
+    . register (Tx 0 (Answer 0 0))
     . mealy outputT (0, 0, repeat 0, repeat 0)
     . register Nothing
-    . fmap (fmap (\(one, two) -> (one, (toDec (pack two)) :: Vec 10 (Unsigned 4))))
-    -- Faster not to register
-    . fmap (fmap (\(one, two) -> ((toDec (pack one)) :: Vec 10 (Unsigned 4), two)))
+    . mealy bcd32T Nothing
     . register Nothing
     . fmap (fmap (\(one, twoAndThree) -> (one, one + twoAndThree)))
-    -- Faster not to register
+    . register Nothing
     . fmap (fmap (\(one, two, three) -> (one, two + three)))
-    -- Faster not to register
+    . register Nothing
     . mealy runT (State 0 0 0 0 0 0)
-    -- Faster not to register
+    . register (Tx 0 (Left 0))
     . mealy inputT 0
 
 topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx (Answer (Unsigned 8)))
@@ -235,7 +256,7 @@ copyWavedrom =
       rst = systemResetGen
       testInput = mkTestInput clk rst
       out = InOut <$> testInput <*> topEntity clk rst en testInput
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 82 "" out
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 116 "" out
 
 testBench :: Signal System Bool
 testBench =
@@ -246,7 +267,7 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (addSNat (SNat :: SNat 4) (lengthS testInput)) (Tx 0 (Answer 0 48))
+          ( replicate (addSNat (SNat :: SNat 40) (lengthS testInput)) (Tx 0 (Answer 0 48))
               ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput1)
               ++ (fmap (Tx 1 . Answer 1 . fromIntegral . ord) testOutput2)
               ++ (Tx 0 (Answer 0 48) :> Nil)
