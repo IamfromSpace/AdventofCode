@@ -42,11 +42,11 @@ import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 data State = State
-  { most1Carried :: Unsigned 32,
-    most2Carried :: Unsigned 32,
-    most3Carried :: Unsigned 32,
-    caloriesAccumulated :: Unsigned 32,
-    snackAccumulated :: Unsigned 32,
+  { most1Carried :: Unsigned 64,
+    most2Carried :: Unsigned 64,
+    most3Carried :: Unsigned 64,
+    caloriesAccumulated :: Unsigned 64,
+    snackAccumulated :: Unsigned 64,
     notSent :: Bit
   }
   deriving stock (Generic)
@@ -68,7 +68,7 @@ data Answer a = Answer
 
 type TxChar = Tx (Unsigned 8)
 
-parseDigit :: Unsigned 8 -> Maybe (Unsigned 32)
+parseDigit :: Unsigned 8 -> Maybe (Unsigned 64)
 parseDigit 10 = Nothing
 parseDigit 48 = Just 0
 parseDigit 49 = Just 1
@@ -85,7 +85,7 @@ parseDigit _ = Nothing
 -- Left 0 -> EndSnack
 -- Left 1 -> EndElf
 -- Right d -> Next Digit
-type Feed = Either Bit (Unsigned 32)
+type Feed = Either Bit (Unsigned 64)
 
 -- State is the number of preceeding new lines
 inputT :: Bit -> Tx (Unsigned 8) -> (Bit, Tx Feed)
@@ -105,7 +105,7 @@ inputT _ (Tx 0 _) =
   (0, Tx 0 (Left 0))
 
 -- Must send two returns
-runT :: State -> Tx Feed -> (State, Maybe (Unsigned 32, Unsigned 32, Unsigned 32))
+runT :: State -> Tx Feed -> (State, Maybe (Unsigned 64, Unsigned 64, Unsigned 64))
 runT state (Tx 1 (Right d)) =
   let sa = snackAccumulated state
    in ( state {snackAccumulated = 10 * sa + d, notSent = 1},
@@ -168,14 +168,35 @@ bcd32T (Just (a, b, n, aBcd, bBcd)) _ =
         then (Nothing, Just (aBcd', bBcd'))
         else (Just (a, b, (n - 1), aBcd', bBcd'), Nothing)
 
+bcd64T ::
+  Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
+  Maybe (Unsigned 64, Unsigned 64) ->
+  ( Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)),
+    Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4))
+  )
+bcd64T Nothing Nothing =
+  -- Nothing in progress, no new values to convert
+  (Nothing, Nothing)
+bcd64T Nothing (Just (a, b)) =
+  -- New values to convert
+  (Just (a, b, 63, repeat 0, repeat 0), Nothing)
+bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
+  -- Convert values in progress
+  let aBcd' = convertStep (a ! n) aBcd
+      bBcd' = convertStep (b ! n) bBcd
+      done = n == 0
+   in if done
+        then (Nothing, Just (aBcd', bBcd'))
+        else (Just (a, b, (n - 1), aBcd', bBcd'), Nothing)
+
 -- states are:
 --   0: Wating to finish
 --   1: Sending problem 1
 --   2: Sending problem 2
 outputT ::
-  (Unsigned 2, Unsigned 4, Vec 10 (Unsigned 4), Vec 10 (Unsigned 4)) ->
-  Maybe (Vec 10 (Unsigned 4), Vec 10 (Unsigned 4)) ->
-  ((Unsigned 2, Unsigned 4, Vec 10 (Unsigned 4), Vec 10 (Unsigned 4)), Tx (Answer (Unsigned 4)))
+  (Unsigned 2, Unsigned 5, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
+  Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
+  ((Unsigned 2, Unsigned 5, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)), Tx (Answer (Unsigned 4)))
 outputT s@(0, _, _, _) Nothing =
   -- Still waiting for input/calc to finish
   (s, (Tx 0 (Answer 0 0)))
@@ -184,7 +205,7 @@ outputT (0, _, _, _) (Just (p1, p2)) =
   ((1, 0, p1, p2), Tx 0 (Answer 0 0))
 outputT (1, n, p1, p2) _ =
   -- Need to send answer 1
-  let done = n == 9
+  let done = n == 19
    in ( ( if done then 2 else 1,
           if done then 0 else n + 1,
           p1,
@@ -194,7 +215,7 @@ outputT (1, n, p1, p2) _ =
       )
 outputT (2, n, p1, p2) _ =
   -- Need to send answer 2
-  let done = n == 9
+  let done = n == 19
    in ( ( if done then 0 else 2,
           n + 1,
           p1,
@@ -210,7 +231,7 @@ run =
     . register (Tx 0 (Answer 0 0))
     . mealy outputT (0, 0, repeat 0, repeat 0)
     . register Nothing
-    . mealy bcd32T Nothing
+    . mealy bcd64T Nothing
     . register Nothing
     . fmap (fmap (\(one, twoAndThree) -> (one, one + twoAndThree)))
     . register Nothing
@@ -226,11 +247,11 @@ topEntity = exposeClockResetEnable run
 testInput :: Vec 56 Char
 testInput = $(listToVecTH "1000\n2000\n3000\n\n4000\n\n5000\n6000\n\n7000\n8000\n9000\n\n10000\n\n")
 
-testOutput1 :: Vec 10 Char
-testOutput1 = $(listToVecTH "0000024000")
+testOutput1 :: Vec 20 Char
+testOutput1 = $(listToVecTH "00000000000000024000")
 
-testOutput2 :: Vec 10 Char
-testOutput2 = $(listToVecTH "0000045000")
+testOutput2 :: Vec 20 Char
+testOutput2 = $(listToVecTH "00000000000000045000")
 
 mkTestInput :: Clock System -> Reset System -> Signal System TxChar
 mkTestInput clk rst =
@@ -256,7 +277,7 @@ copyWavedrom =
       rst = systemResetGen
       testInput = mkTestInput clk rst
       out = InOut <$> testInput <*> topEntity clk rst en testInput
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 116 "" out
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 148 "" out
 
 testBench :: Signal System Bool
 testBench =
@@ -267,7 +288,7 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (addSNat (SNat :: SNat 40) (lengthS testInput)) (Tx 0 (Answer 0 48))
+          ( replicate (addSNat (SNat :: SNat 72) (lengthS testInput)) (Tx 0 (Answer 0 48))
               ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput1)
               ++ (fmap (Tx 1 . Answer 1 . fromIntegral . ord) testOutput2)
               ++ (Tx 0 (Answer 0 48) :> Nil)
