@@ -4,7 +4,7 @@ import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
 import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
-import Clash.Prelude (Bit, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replicate, systemResetGen)
+import Clash.Prelude (Bit, replaceBit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replicate, systemResetGen)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import Clash.WaveDrom (ToWave, render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
@@ -40,6 +40,71 @@ import GHC.Generics (Generic)
 import System.Hclip (setClipboard)
 import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
+
+data UartRx8N1State
+  = Idle
+  | Offsetting (Unsigned 4)
+  | Receiving (Unsigned 4) (Unsigned 4) -- Delay / Bits RX'd
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+-- Our cases generally read bottom to top here
+uartRx8N1T :: (UartRx8N1State, BitVector 8) -> Bit -> ((UartRx8N1State, BitVector 8), Maybe (BitVector 8))
+uartRx8N1T ((Receiving 7 8), _) 0 =
+  -- impossible case, where the stop bit isn't high
+  undefined
+uartRx8N1T ((Receiving 7 8), v) 1 =
+  -- The 9th bit is the stop bit, which must be 1, we immediately go idle and
+  -- send the result, just in case there's slack in the system and the stop bit
+  -- must run short.
+  ((Idle, v), Just v)
+uartRx8N1T ((Receiving 7 n), v) b =
+  -- This is our safest clock cycle to read the bit, so we do
+  ((Receiving 0 (n + 1), replaceBit n b v), Nothing)
+uartRx8N1T ((Receiving d n), v) _ =
+  -- This clock cycle might be mid-edge change, so we ignore it
+  (((Receiving (d + 1) n), v), Nothing)
+uartRx8N1T (Offsetting 3, v) _ =
+  -- We use three clock cycles per bit, and we always offset 1 from the
+  -- detected falling edge between stop and start bits.  This ensure's were
+  -- in the middle of the baud cycle +/- 1/6.
+  ((Receiving 0 0, v), Nothing)
+uartRx8N1T (Offsetting n, v) _ =
+  -- We use three clock cycles per bit, and we always offset 1 from the
+  -- detected falling edge between stop and start bits.  This ensure's were
+  -- in the middle of the baud cycle +/- 1/6.
+  ((Offsetting (n + 1), v), Nothing)
+uartRx8N1T (Idle, v) 0 =
+  -- Start bit recieved, meaning we're no longer idle.  We also now know
+  -- (within 1/3rd of the baud rate) where the falling edge lies.  We'll
+  -- offset from it, to ensure we're in a stable zone.
+  ((Offsetting 0, v), Nothing)
+uartRx8N1T (Idle, v) 1 =
+  -- No data, still waiting for the falling edge.
+  ((Idle, v), Nothing)
+
+data UartTx8N1State
+  = Start
+  | Sending (Unsigned 3)
+  | Stop (Maybe (BitVector 8))
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+uartTx8N1T :: Maybe (UartTx8N1State, Unsigned 4, BitVector 8) -> Maybe (BitVector 8) -> (Maybe (UartTx8N1State, Unsigned 4, BitVector 8), Bit)
+uartTx8N1T (Just (Stop mv', n, v)) mv'' =
+  let mv = mv' <|> mv''
+   in if n == 7
+        then case mv of
+          Nothing -> (Nothing, 1)
+          Just v -> (Just (Start, 0, v), 1)
+        else (Just (Stop mv, n + 1, v), 1)
+uartTx8N1T (Just (Sending 7, 7, v)) mv = (Just (Stop mv, 0, v), v ! 7)
+uartTx8N1T (Just (Sending n, 7, v)) _ = (Just (Sending (n + 1), 0, v), v ! n)
+uartTx8N1T (Just (Sending n, m, v)) _ = (Just (Sending n, m + 1, v), v ! n)
+uartTx8N1T (Just (Start, 7, v)) _ = (Just (Sending 0, 0, v), 0)
+uartTx8N1T (Just (Start, n, v)) _ = (Just (Start, n + 1, v), 0)
+uartTx8N1T Nothing (Just v) = (Just (Start, 0, v), 1)
+uartTx8N1T Nothing Nothing = (Nothing, 1)
 
 data State = State
   { most1Carried :: Unsigned 64,
