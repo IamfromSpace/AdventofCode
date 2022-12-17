@@ -6,7 +6,7 @@ import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
 import Clash.Prelude (Bit, replaceBit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replicate, systemResetGen)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
-import Clash.WaveDrom (ToWave, render, wavedromWithClock)
+import Clash.WaveDrom (ToWave, render, wavedromWithClock, WithBits(WithBits))
 import Clash.XException (NFDataX, ShowX)
 import Control.Applicative (pure, (<*>), (<|>))
 import qualified Control.Applicative as App
@@ -117,21 +117,14 @@ data State = State
   deriving stock (Generic)
   deriving anyclass (NFData, NFDataX, ToWave)
 
-data Tx a = Tx
-  { tx :: Bit,
-    d :: a
-  }
-  deriving stock (Generic, Eq)
-  deriving anyclass (NFData, NFDataX, ShowX, ToWave)
-
 data Answer a = Answer
   { part :: Bit,
     char :: a
   }
-  deriving stock (Generic, Eq)
-  deriving anyclass (NFData, NFDataX, ShowX, ToWave)
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (NFData, NFDataX, ShowX, ToWave, BitPack)
 
-type TxChar = Tx (Unsigned 8)
+type TxChar = Maybe (Unsigned 8)
 
 parseDigit :: Unsigned 8 -> Maybe (Unsigned 64)
 parseDigit 10 = Nothing
@@ -153,30 +146,30 @@ parseDigit _ = Nothing
 type Feed = Either Bit (Unsigned 64)
 
 -- State is the number of preceeding new lines
-inputT :: Bit -> Tx (Unsigned 8) -> (Bit, Tx Feed)
-inputT 0 (Tx 1 char) =
+inputT :: Bit -> Maybe (Unsigned 8) -> (Bit, Maybe Feed)
+inputT 0 (Just char) =
   case parseDigit char of
     Nothing ->
-      (1, Tx 1 (Left 0))
+      (1, Just (Left 0))
     Just d ->
-      (0, Tx 1 (Right d))
-inputT 1 (Tx 1 char) =
+      (0, Just (Right d))
+inputT 1 (Just char) =
   case parseDigit char of
     Nothing ->
-      (0, Tx 1 (Left 1))
+      (0, Just (Left 1))
     Just d ->
-      (0, Tx 1 (Right d))
-inputT _ (Tx 0 _) =
-  (0, Tx 0 (Left 0))
+      (0, Just (Right d))
+inputT _ Nothing =
+  (0, Nothing)
 
 -- Must send two returns
-runT :: State -> Tx Feed -> (State, Maybe (Unsigned 64, Unsigned 64, Unsigned 64))
-runT state (Tx 1 (Right d)) =
+runT :: State -> Maybe Feed -> (State, Maybe (Unsigned 64, Unsigned 64, Unsigned 64))
+runT state (Just (Right d)) =
   let sa = snackAccumulated state
    in ( state {snackAccumulated = 10 * sa + d, notSent = 1},
         Nothing
       )
-runT state (Tx 1 (Left 1)) =
+runT state (Just (Left 1)) =
   let ca = caloriesAccumulated state
       m1c = most1Carried state
       m2c = most2Carried state
@@ -189,7 +182,7 @@ runT state (Tx 1 (Left 1)) =
           },
         Nothing
       )
-runT state (Tx 1 (Left 0)) =
+runT state (Just (Left 0)) =
   let sa = snackAccumulated state
       ca = caloriesAccumulated state
    in ( state
@@ -198,7 +191,7 @@ runT state (Tx 1 (Left 0)) =
           },
         Nothing
       )
-runT state (Tx 0 _) =
+runT state Nothing =
   if notSent state == 1
     then
       ( State 0 0 0 0 0 0,
@@ -261,13 +254,13 @@ bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
 outputT ::
   (Unsigned 2, Unsigned 5, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
   Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
-  ((Unsigned 2, Unsigned 5, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)), Tx (Answer (Unsigned 4)))
+  ((Unsigned 2, Unsigned 5, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)), Maybe (Answer (Unsigned 4)))
 outputT s@(0, _, _, _) Nothing =
   -- Still waiting for input/calc to finish
-  (s, (Tx 0 (Answer 0 0)))
+  (s, Nothing)
 outputT (0, _, _, _) (Just (p1, p2)) =
   -- output just finish, grab it
-  ((1, 0, p1, p2), Tx 0 (Answer 0 0))
+  ((1, 0, p1, p2), Nothing)
 outputT (1, n, p1, p2) _ =
   -- Need to send answer 1
   let done = n == 19
@@ -276,7 +269,7 @@ outputT (1, n, p1, p2) _ =
           p1,
           p2
         ),
-        (Tx 1 (Answer 0 (p1 !! n)))
+        (Just (Answer 0 (p1 !! n)))
       )
 outputT (2, n, p1, p2) _ =
   -- Need to send answer 2
@@ -286,14 +279,14 @@ outputT (2, n, p1, p2) _ =
           p1,
           p2
         ),
-        (Tx 1 (Answer 1 (p2 !! n)))
+        (Just (Answer 1 (p2 !! n)))
       )
 
 -- outputs leading zeros
-run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Tx (Answer (Unsigned 8)))
+run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Maybe (Answer (Unsigned 8)))
 run =
-  fmap (\(Tx x (Answer p a)) -> Tx x (Answer p (unpack (bcdToAscii (pack a)))))
-    . register (Tx 0 (Answer 0 0))
+  fmap (fmap (\(Answer p a) -> Answer p (unpack (bcdToAscii (pack a)))))
+    . register Nothing
     . mealy outputT (0, 0, repeat 0, repeat 0)
     . register Nothing
     . mealy bcd64T Nothing
@@ -303,10 +296,10 @@ run =
     . fmap (fmap (\(one, two, three) -> (one, two + three)))
     . register Nothing
     . mealy runT (State 0 0 0 0 0 0)
-    . register (Tx 0 (Left 0))
+    . register Nothing
     . mealy inputT 0
 
-topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Tx (Answer (Unsigned 8)))
+topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Maybe (Answer (Unsigned 8)))
 topEntity = exposeClockResetEnable run
 
 testInput :: Vec 56 Char
@@ -323,9 +316,9 @@ mkTestInput clk rst =
   stimuliGenerator
     clk
     rst
-    ( (Tx 0 0 :> Nil)
-        ++ (fmap (Tx 1 . fromIntegral . ord) testInput)
-        ++ (Tx 0 0 :> Nil)
+    ( (Nothing :> Nil)
+        ++ (fmap (Just . fromIntegral . ord) testInput)
+        ++ (Nothing :> Nil)
     )
 
 data InOut a b = InOut
@@ -341,7 +334,7 @@ copyWavedrom =
       clk = tbSystemClockGen (False <$ out)
       rst = systemResetGen
       testInput = mkTestInput clk rst
-      out = InOut <$> testInput <*> topEntity clk rst en testInput
+      out = (\(InOut a b) -> InOut (WithBits a) (WithBits b)) <$> (InOut <$> testInput <*> topEntity clk rst en testInput)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 148 "" out
 
 testBench :: Signal System Bool
@@ -353,10 +346,10 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (addSNat (SNat :: SNat 72) (lengthS testInput)) (Tx 0 (Answer 0 48))
-              ++ (fmap (Tx 1 . Answer 0 . fromIntegral . ord) testOutput1)
-              ++ (fmap (Tx 1 . Answer 1 . fromIntegral . ord) testOutput2)
-              ++ (Tx 0 (Answer 0 48) :> Nil)
+          ( replicate (addSNat (SNat :: SNat 72) (lengthS testInput)) Nothing
+              ++ (fmap (Just . Answer 0 . fromIntegral . ord) testOutput1)
+              ++ (fmap (Just . Answer 1 . fromIntegral . ord) testOutput2)
+              ++ (Nothing :> Nil)
           )
       done = expectOutput (topEntity clk rst en (mkTestInput clk rst))
    in done
