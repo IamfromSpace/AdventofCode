@@ -4,9 +4,9 @@ import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
 import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
-import Clash.Prelude (Bit, replaceBit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replicate, systemResetGen)
+import Clash.Prelude (Bit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replaceBit, replicate, systemResetGen)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
-import Clash.WaveDrom (ToWave, render, wavedromWithClock, WithBits(WithBits))
+import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
 import Control.Applicative (pure, (<*>), (<|>))
 import qualified Control.Applicative as App
@@ -116,13 +116,6 @@ data State = State
   }
   deriving stock (Generic)
   deriving anyclass (NFData, NFDataX, ToWave)
-
-data Answer a = Answer
-  { part :: Bit,
-    char :: a
-  }
-  deriving stock (Generic, Eq, Show)
-  deriving anyclass (NFData, NFDataX, ShowX, ToWave, BitPack)
 
 type TxChar = Maybe (Unsigned 8)
 
@@ -247,47 +240,34 @@ bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
         then (Nothing, Just (aBcd', bBcd'))
         else (Just (a, b, (n - 1), aBcd', bBcd'), Nothing)
 
--- states are:
---   0: Wating to finish
---   1: Sending problem 1
---   2: Sending problem 2
-outputT ::
-  (Unsigned 2, Unsigned 5, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
-  Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
-  ((Unsigned 2, Unsigned 5, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)), Maybe (Answer (Unsigned 4)))
-outputT s@(0, _, _, _) Nothing =
-  -- Still waiting for input/calc to finish
-  (s, Nothing)
-outputT (0, _, _, _) (Just (p1, p2)) =
-  -- output just finish, grab it
-  ((1, 0, p1, p2), Nothing)
-outputT (1, n, p1, p2) _ =
-  -- Need to send answer 1
-  let done = n == 19
-   in ( ( if done then 2 else 1,
-          if done then 0 else n + 1,
-          p1,
-          p2
-        ),
-        (Just (Answer 0 (p1 !! n)))
-      )
-outputT (2, n, p1, p2) _ =
-  -- Need to send answer 2
-  let done = n == 19
-   in ( ( if done then 0 else 2,
-          n + 1,
-          p1,
-          p2
-        ),
-        (Just (Answer 1 (p2 !! n)))
+-- TODO: Not sure how to make vector length abstract
+bufferVec42T ::
+  Maybe (Unsigned 6, Vec 42 a) ->
+  Maybe (Vec 42 a) ->
+  (Maybe (Unsigned 6, Vec 42 a), Maybe a)
+bufferVec42T Nothing Nothing =
+  -- Nothing to do, waiting for another input
+  (Nothing, Nothing)
+bufferVec42T Nothing (Just v) =
+  -- output just finished, grab it
+  (Just (0, v), Nothing)
+bufferVec42T (Just (n, v)) _ =
+  -- Need to send characters
+  let done = n == 41
+   in ( if done then Nothing else Just ((n + 1), v),
+        (Just (v !! n))
       )
 
 -- outputs leading zeros
-run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Maybe (Answer (Unsigned 8)))
+run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Maybe (Unsigned 8))
 run =
-  fmap (fmap (\(Answer p a) -> Answer p (unpack (bcdToAscii (pack a)))))
+  fmap (fmap (maybe 10 (unpack . bcdToAscii . pack)))
     . register Nothing
-    . mealy outputT (0, 0, repeat 0, repeat 0)
+    . mealy bufferVec42T Nothing
+    . register Nothing
+    -- Nothing means '\n', so that we're wire efficient.  Probably need to do
+    -- something else though.
+    . fmap (fmap (\(a, b) -> fmap Just a ++ (Nothing :> Nil) ++ fmap Just b ++ (Nothing :> Nil)))
     . register Nothing
     . mealy bcd64T Nothing
     . register Nothing
@@ -299,7 +279,7 @@ run =
     . register Nothing
     . mealy inputT 0
 
-topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Maybe (Answer (Unsigned 8)))
+topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Maybe (Unsigned 8))
 topEntity = exposeClockResetEnable run
 
 testInput :: Vec 56 Char
@@ -335,7 +315,7 @@ copyWavedrom =
       rst = systemResetGen
       testInput = mkTestInput clk rst
       out = (\(InOut a b) -> InOut (WithBits a) (WithBits b)) <$> (InOut <$> testInput <*> topEntity clk rst en testInput)
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 148 "" out
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 180 "" out
 
 testBench :: Signal System Bool
 testBench =
@@ -346,9 +326,11 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (addSNat (SNat :: SNat 72) (lengthS testInput)) Nothing
-              ++ (fmap (Just . Answer 0 . fromIntegral . ord) testOutput1)
-              ++ (fmap (Just . Answer 1 . fromIntegral . ord) testOutput2)
+          ( replicate (addSNat (SNat :: SNat 73) (lengthS testInput)) Nothing
+              ++ (fmap (Just . fromIntegral . ord) testOutput1)
+              ++ (Just 10 :> Nil)
+              ++ (fmap (Just . fromIntegral . ord) testOutput2)
+              ++ (Just 10 :> Nil)
               ++ (Nothing :> Nil)
           )
       done = expectOutput (topEntity clk rst en (mkTestInput clk rst))
