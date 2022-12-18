@@ -6,19 +6,21 @@ import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
 import Clash.Prelude (Bit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replaceBit, replicate, systemResetGen)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
+import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
 import Control.Applicative (pure, (<*>), (<|>))
 import qualified Control.Applicative as App
 import Control.Arrow (arr, returnA, (&&&), (***), (<+>), (<<<), (>>>), (>>^), (|||))
 import Control.DeepSeq (NFData)
+import Control.Monad (join)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
-import Data.Char (ord)
+import Data.Char (chr, ord)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import Data.Foldable (fold, toList)
@@ -139,21 +141,28 @@ parseDigit _ = Nothing
 type Feed = Either Bit (Unsigned 64)
 
 -- State is the number of preceeding new lines
-inputT :: Bit -> Maybe (Unsigned 8) -> (Bit, Maybe Feed)
-inputT 0 (Just char) =
+inputT :: Bit -> Unsigned 8 -> (Bit, Maybe Feed)
+inputT _ 4 =
+  (0, Nothing)
+inputT 0 char =
   case parseDigit char of
     Nothing ->
       (1, Just (Left 0))
     Just d ->
       (0, Just (Right d))
-inputT 1 (Just char) =
+inputT 1 char =
   case parseDigit char of
     Nothing ->
       (0, Just (Left 1))
     Just d ->
       (0, Just (Right d))
-inputT _ Nothing =
-  (0, Nothing)
+
+-- Let's us arbitrarily group the number of times the state machine executes in
+-- combinational logic.  Possibly none!
+adapt :: Traversable t => (s -> a -> (s, b)) -> s -> t a -> (s, t b)
+adapt m b ta =
+  let (bs, ta') = traverse (fmap (\(b, a) -> ([b], a)) $ m b) ta
+   in (last (b : bs), ta')
 
 -- Must send two returns
 runT :: State -> Maybe Feed -> (State, Maybe (Unsigned 64, Unsigned 64, Unsigned 64))
@@ -259,7 +268,7 @@ bufferVec42T (Just (n, v)) _ =
       )
 
 -- outputs leading zeros
-run :: HiddenClockResetEnable dom => Signal dom TxChar -> Signal dom (Maybe (Unsigned 8))
+run :: HiddenClockResetEnable dom => Signal dom Bit -> Signal dom (Maybe (Unsigned 8))
 run =
   fmap (fmap (maybe 10 (unpack . bcdToAscii . pack)))
     . register Nothing
@@ -274,13 +283,34 @@ run =
     . fmap (fmap (\(one, twoAndThree) -> (one, one + twoAndThree)))
     . register Nothing
     . fmap (fmap (\(one, two, three) -> (one, two + three)))
+    . fmap join
     . register Nothing
-    . mealy runT (State 0 0 0 0 0 0)
+    . mealy (adapt runT) (State 0 0 0 0 0 0)
     . register Nothing
-    . mealy inputT 0
+    . mealy (adapt inputT) 0
+    . register Nothing
+    . fmap (fmap unpack)
+    . mealy uartRx8N1T (Idle, 0)
 
-topEntity :: Clock System -> Reset System -> Enable System -> Signal System TxChar -> Signal System (Maybe (Unsigned 8))
+topEntity :: Clock System -> Reset System -> Enable System -> Signal System Bit -> Signal System (Maybe (Unsigned 8))
 topEntity = exposeClockResetEnable run
+
+charToBit :: Char -> Int -> Bit
+charToBit char lsbIndex =
+  (fromIntegral (ord char) :: Unsigned 8) ! lsbIndex
+
+charToUartRx :: Char -> Vec 80 Bit
+charToUartRx char =
+  replicate (SNat :: SNat 8) 0
+    ++ replicate (SNat :: SNat 8) (charToBit char 0)
+    ++ replicate (SNat :: SNat 8) (charToBit char 1)
+    ++ replicate (SNat :: SNat 8) (charToBit char 2)
+    ++ replicate (SNat :: SNat 8) (charToBit char 3)
+    ++ replicate (SNat :: SNat 8) (charToBit char 4)
+    ++ replicate (SNat :: SNat 8) (charToBit char 5)
+    ++ replicate (SNat :: SNat 8) (charToBit char 6)
+    ++ replicate (SNat :: SNat 8) (charToBit char 7)
+    ++ replicate (SNat :: SNat 8) 1
 
 testInput :: Vec 56 Char
 testInput = $(listToVecTH "1000\n2000\n3000\n\n4000\n\n5000\n6000\n\n7000\n8000\n9000\n\n10000\n\n")
@@ -291,14 +321,15 @@ testOutput1 = $(listToVecTH "00000000000000024000")
 testOutput2 :: Vec 20 Char
 testOutput2 = $(listToVecTH "00000000000000045000")
 
-mkTestInput :: Clock System -> Reset System -> Signal System TxChar
+mkTestInput :: Clock System -> Reset System -> Signal System Bit
 mkTestInput clk rst =
   stimuliGenerator
     clk
     rst
-    ( (Nothing :> Nil)
-        ++ (fmap (Just . fromIntegral . ord) testInput)
-        ++ (Nothing :> Nil)
+    ( (1 :> 1 :> 1 :> 1 :> Nil)
+        ++ Vector.concatMap charToUartRx testInput
+        ++ charToUartRx (chr 4)
+        ++ (1 :> Nil)
     )
 
 data InOut a b = InOut
@@ -314,8 +345,8 @@ copyWavedrom =
       clk = tbSystemClockGen (False <$ out)
       rst = systemResetGen
       testInput = mkTestInput clk rst
-      out = (\(InOut a b) -> InOut (WithBits a) (WithBits b)) <$> (InOut <$> testInput <*> topEntity clk rst en testInput)
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 180 "" out
+      out = (\(InOut a b) -> InOut a (WithBits b)) <$> (InOut <$> testInput <*> topEntity clk rst en testInput)
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 700 "" out
 
 testBench :: Signal System Bool
 testBench =
@@ -326,7 +357,7 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (addSNat (SNat :: SNat 73) (lengthS testInput)) Nothing
+          ( replicate (SNat :: SNat 4633) Nothing
               ++ (fmap (Just . fromIntegral . ord) testOutput1)
               ++ (Just 10 :> Nil)
               ++ (fmap (Just . fromIntegral . ord) testOutput2)
