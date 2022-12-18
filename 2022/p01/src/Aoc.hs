@@ -3,8 +3,8 @@ module Aoc where
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
 import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
-import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbSystemClockGen)
-import Clash.Prelude (Bit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, SNat (SNat), Signal, System, Unsigned, addSNat, enableGen, exposeClockResetEnable, lengthS, mealy, register, repeat, replaceBit, replicate, systemResetGen)
+import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
+import Clash.Prelude (Bit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
@@ -39,9 +39,14 @@ import Data.String (fromString)
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
+import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
 import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
+
+createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
+
+createDomain (knownVDomain @System){vName="AlchitryHalf", vResetPolarity=ActiveLow, vPeriod=20000}
 
 data UartRx8N1State
   = Idle
@@ -300,8 +305,10 @@ run =
     . fmap (fmap unpack)
     . mealy uartRx8N1T (Idle, 0)
 
-topEntity :: Clock System -> Reset System -> Enable System -> Signal System Bit -> Signal System Bit
-topEntity = exposeClockResetEnable run
+topEntity :: Clock Alchitry -> Reset Alchitry -> Enable Alchitry -> Signal Alchitry Bit -> Signal Alchitry Bit
+topEntity clk rst _ input =
+  let (clk', _, _) = pllPadPrim 0 0 2 "SIMPLE" 1 "GENCLK" "FIXED" "FIXED" 0 0 0 clk (pure 0) (pure 1) (pure 0)
+   in exposeClockResetEnable run clk' resetGen enableGen input
 
 charToBit :: Char -> Int -> Bit
 charToBit char lsbIndex =
@@ -329,7 +336,7 @@ testOutput1 = $(listToVecTH "00000000000000024000")
 testOutput2 :: Vec 20 Char
 testOutput2 = $(listToVecTH "00000000000000045000")
 
-mkTestInput :: Clock System -> Reset System -> Signal System Bit
+mkTestInput :: Clock Alchitry -> Reset Alchitry -> Signal Alchitry Bit
 mkTestInput clk rst =
   stimuliGenerator
     clk
@@ -350,17 +357,17 @@ data InOut a b = InOut
 copyWavedrom :: IO ()
 copyWavedrom =
   let en = enableGen
-      clk = tbSystemClockGen (False <$ out)
-      rst = systemResetGen
+      clk = tbClockGen (False <$ out)
+      rst = resetGen
       testInput = mkTestInput clk rst
       out = InOut <$> testInput <*> topEntity clk rst en testInput
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 700 "" out
 
-testBench :: Signal System Bool
+testBench :: Signal Alchitry Bool
 testBench =
   let en = enableGen
-      clk = tbSystemClockGen (not <$> done)
-      rst = systemResetGen
+      clk = tbClockGen (not <$> done)
+      rst = resetGen
       expectOutput =
         outputVerifier'
           clk

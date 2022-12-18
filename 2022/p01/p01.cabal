@@ -3,8 +3,6 @@ cabal-version: 1.12
 -- This file has been generated from package.yaml by hpack version 0.33.0.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: cd864f6feafd8abd376d99824601582b95bf3463c40c4d1e5b5ecc84467772c9
 
 name:           p01
 version:        0.1.0.0
@@ -45,6 +43,7 @@ library
     , ghc-typelits-knownnat
     , ghc-typelits-natnormalise
     , groups
+    , ice40-prim
     , lens
     , monad-loops
     , mtl
@@ -76,6 +75,7 @@ executable clash
     , ghc-typelits-knownnat
     , ghc-typelits-natnormalise
     , groups
+    , ice40-prim
     , lens
     , monad-loops
     , mtl
@@ -108,6 +108,7 @@ executable clashi
     , ghc-typelits-knownnat
     , ghc-typelits-natnormalise
     , groups
+    , ice40-prim
     , lens
     , monad-loops
     , mtl
@@ -141,6 +142,7 @@ test-suite p01-test
     , ghc-typelits-natnormalise
     , groups
     , hspec
+    , ice40-prim
     , lens
     , monad-loops
     , mtl
