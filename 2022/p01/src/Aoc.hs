@@ -250,29 +250,37 @@ bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
         else (Just (a, b, (n - 1), aBcd', bBcd'), Nothing)
 
 -- TODO: Not sure how to make vector length abstract
-bufferVec42T ::
-  Maybe (Unsigned 6, Vec 42 a) ->
+delayBufferVec42T ::
+  Maybe (Unsigned 7, Unsigned 6, Vec 42 a) ->
   Maybe (Vec 42 a) ->
-  (Maybe (Unsigned 6, Vec 42 a), Maybe a)
-bufferVec42T Nothing Nothing =
+  (Maybe (Unsigned 7, Unsigned 6, Vec 42 a), Maybe a)
+delayBufferVec42T Nothing Nothing =
   -- Nothing to do, waiting for another input
   (Nothing, Nothing)
-bufferVec42T Nothing (Just v) =
+delayBufferVec42T Nothing (Just v) =
   -- output just finished, grab it
-  (Just (0, v), Nothing)
-bufferVec42T (Just (n, v)) _ =
+  (Just (0, 0, v), Nothing)
+delayBufferVec42T (Just (d, n, v)) _ =
   -- Need to send characters
-  let done = n == 41
-   in ( if done then Nothing else Just ((n + 1), v),
-        (Just (v !! n))
+  let next = d == 79
+      done = n == 41 && next
+   in ( if done
+          then Nothing
+          else
+            if next
+              then Just (0, (n + 1), v)
+              else Just (d + 1, n, v),
+        (if next then Just (v !! n) else Nothing)
       )
 
 -- outputs leading zeros
-run :: HiddenClockResetEnable dom => Signal dom Bit -> Signal dom (Maybe (Unsigned 8))
+run :: HiddenClockResetEnable dom => Signal dom Bit -> Signal dom Bit
 run =
-  fmap (fmap (maybe 10 (unpack . bcdToAscii . pack)))
+  mealy uartTx8N1T Nothing
     . register Nothing
-    . mealy bufferVec42T Nothing
+    . fmap (fmap (maybe 10 (bcdToAscii . pack)))
+    . register Nothing
+    . mealy delayBufferVec42T Nothing
     . register Nothing
     -- Nothing means '\n', so that we're wire efficient.  Probably need to do
     -- something else though.
@@ -292,7 +300,7 @@ run =
     . fmap (fmap unpack)
     . mealy uartRx8N1T (Idle, 0)
 
-topEntity :: Clock System -> Reset System -> Enable System -> Signal System Bit -> Signal System (Maybe (Unsigned 8))
+topEntity :: Clock System -> Reset System -> Enable System -> Signal System Bit -> Signal System Bit
 topEntity = exposeClockResetEnable run
 
 charToBit :: Char -> Int -> Bit
@@ -345,7 +353,7 @@ copyWavedrom =
       clk = tbSystemClockGen (False <$ out)
       rst = systemResetGen
       testInput = mkTestInput clk rst
-      out = (\(InOut a b) -> InOut a (WithBits b)) <$> (InOut <$> testInput <*> topEntity clk rst en testInput)
+      out = InOut <$> testInput <*> topEntity clk rst en testInput
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 700 "" out
 
 testBench :: Signal System Bool
@@ -357,12 +365,12 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 4633) Nothing
-              ++ (fmap (Just . fromIntegral . ord) testOutput1)
-              ++ (Just 10 :> Nil)
-              ++ (fmap (Just . fromIntegral . ord) testOutput2)
-              ++ (Just 10 :> Nil)
-              ++ (Nothing :> Nil)
+          ( replicate (SNat :: SNat 4714) 1
+              ++ (Vector.concatMap charToUartRx testOutput1)
+              ++ (charToUartRx '\n')
+              ++ (Vector.concatMap charToUartRx testOutput2)
+              ++ (charToUartRx '\n')
+              ++ (1 :> Nil)
           )
       done = expectOutput (topEntity clk rst en (mkTestInput clk rst))
    in done
