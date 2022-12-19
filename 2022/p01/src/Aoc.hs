@@ -3,7 +3,7 @@ module Aoc where
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
 import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
-import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
+import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
 import Clash.Prelude (Bit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import qualified Clash.Sized.Vector as Vector
@@ -327,25 +327,20 @@ charToUartRx char =
     ++ replicate (SNat :: SNat 8) (charToBit char 7)
     ++ replicate (SNat :: SNat 8) 1
 
-testInput :: Vec 56 Char
-testInput = $(listToVecTH "1000\n2000\n3000\n\n4000\n\n5000\n6000\n\n7000\n8000\n9000\n\n10000\n\n")
+testOutput1 :: Vec 5 Char
+testOutput1 = $(listToVecTH "24000")
 
-testOutput1 :: Vec 20 Char
-testOutput1 = $(listToVecTH "00000000000000024000")
+testOutput2 :: Vec 5 Char
+testOutput2 = $(listToVecTH "45000")
 
-testOutput2 :: Vec 20 Char
-testOutput2 = $(listToVecTH "00000000000000045000")
-
-mkTestInput :: Clock Alchitry -> Reset Alchitry -> Signal Alchitry Bit
-mkTestInput clk rst =
-  stimuliGenerator
-    clk
-    rst
-    ( (1 :> 1 :> 1 :> 1 :> Nil)
-        ++ Vector.concatMap charToUartRx testInput
-        ++ charToUartRx (chr 4)
-        ++ (1 :> Nil)
-    )
+testInput :: Vec _ Bit
+testInput =
+  let raw = $(listToVecTH "1000\n2000\n3000\n\n4000\n\n5000\n6000\n\n7000\n8000\n9000\n\n10000\n\n")
+   in ( (1 :> 1 :> 1 :> 1 :> Nil)
+          ++ Vector.concatMap charToUartRx raw
+          ++ charToUartRx (chr 4)
+          ++ (1 :> Nil)
+      )
 
 data InOut a b = InOut
   { input :: a,
@@ -359,15 +354,16 @@ copyWavedrom =
   let en = enableGen
       clk = tbClockGen (False <$ out)
       rst = resetGen
-      testInput = mkTestInput clk rst
-      out = InOut <$> testInput <*> topEntity clk rst en testInput
+      inputSignal = stimuliGenerator clk rst testInput
+      out = InOut <$> inputSignal <*> topEntity clk rst en inputSignal
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 700 "" out
 
-testBench :: Signal Alchitry Bool
+testBench :: Signal System Bool
 testBench =
   let en = enableGen
-      clk = tbClockGen (not <$> done)
+      clk = tbSystemClockGen (not <$> done)
       rst = resetGen
+      inputSignal = stimuliGenerator clk rst testInput
       expectOutput =
         outputVerifier'
           clk
@@ -379,5 +375,5 @@ testBench =
               ++ (charToUartRx '\n')
               ++ (1 :> Nil)
           )
-      done = expectOutput (topEntity clk rst en (mkTestInput clk rst))
+      done = expectOutput (exposeClockResetEnable run clk rst en inputSignal)
    in done
