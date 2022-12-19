@@ -4,7 +4,7 @@ import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
 import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
-import Clash.Prelude (Bit, BitVector, Clock, Enable, HiddenClockResetEnable, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, vName, vPeriod, vResetPolarity)
+import Clash.Prelude (Bit, BitVector, Clock, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
@@ -278,18 +278,35 @@ delayBufferVec42T (Just (d, n, v)) _ =
         (if next then Just (v !! n) else Nothing)
       )
 
--- outputs leading zeros
+data BcdOrControl
+  = Bcd (Unsigned 4)
+  | Return
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+blankLeadingZeros :: KnownNat n => Vec n (Unsigned 4) -> Vec n (Maybe BcdOrControl)
+-- blankLeadingZeros = fmap (Just . Bcd)
+blankLeadingZeros v =
+  case Vector.findIndex ((/=) 0) v of
+    Nothing -> Vector.replace 0 (Just (Bcd 0)) $ repeat Nothing
+    Just i -> Vector.imap (\i' x -> if i' < i then Nothing else Just (Bcd x)) v
+
+bcdOrControlToAscii :: BcdOrControl -> BitVector 8
+bcdOrControlToAscii x =
+  case x of
+    Bcd bcd -> bcdToAscii $ pack bcd
+    Return -> 10
+
 run :: HiddenClockResetEnable dom => Signal dom Bit -> Signal dom Bit
 run =
   mealy uartTx8N1T Nothing
     . register Nothing
-    . fmap (fmap (maybe 10 (bcdToAscii . pack)))
+    . fmap (fmap bcdOrControlToAscii)
     . register Nothing
-    . mealy delayBufferVec42T Nothing
+    . fmap join
+    . mealy delayBufferVec43T Nothing
     . register Nothing
-    -- Nothing means '\n', so that we're wire efficient.  Probably need to do
-    -- something else though.
-    . fmap (fmap (\(a, b) -> fmap Just a ++ (Nothing :> Nil) ++ fmap Just b ++ (Nothing :> Nil)))
+    . fmap (fmap (\(a, b) -> blankLeadingZeros a ++ (Just Return :> Nil) ++ blankLeadingZeros b ++ (Just Return :> Nil)))
     . register Nothing
     . mealy bcd64T Nothing
     . register Nothing
@@ -369,9 +386,11 @@ testBench =
           clk
           rst
           ( replicate (SNat :: SNat 4714) 1
-              ++ (Vector.concatMap charToUartRx testOutput1)
+              ++ replicate (SNat :: SNat 1200) 1 -- blank leading zeros
+              ++ Vector.concatMap charToUartRx testOutput1
               ++ (charToUartRx '\n')
-              ++ (Vector.concatMap charToUartRx testOutput2)
+              ++ replicate (SNat :: SNat 1200) 1 -- blank leading zeros
+              ++ Vector.concatMap charToUartRx testOutput2
               ++ (charToUartRx '\n')
               ++ (1 :> Nil)
           )
