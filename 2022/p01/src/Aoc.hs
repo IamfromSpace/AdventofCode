@@ -255,17 +255,17 @@ bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
         else (Just (a, b, (n - 1), aBcd', bBcd'), Nothing)
 
 -- TODO: Not sure how to make vector length abstract
-delayBufferVec42T ::
-  Maybe (Unsigned 7, Unsigned 6, Vec 42 a) ->
-  Maybe (Vec 42 a) ->
-  (Maybe (Unsigned 7, Unsigned 6, Vec 42 a), Maybe a)
-delayBufferVec42T Nothing Nothing =
+delayBufferVec43T ::
+  Maybe (Unsigned 7, Unsigned 6, Vec 43 a) ->
+  Maybe (Vec 43 a) ->
+  (Maybe (Unsigned 7, Unsigned 6, Vec 43 a), Maybe a)
+delayBufferVec43T Nothing Nothing =
   -- Nothing to do, waiting for another input
   (Nothing, Nothing)
-delayBufferVec42T Nothing (Just v) =
+delayBufferVec43T Nothing (Just v) =
   -- output just finished, grab it
   (Just (0, 0, v), Nothing)
-delayBufferVec42T (Just (d, n, v)) _ =
+delayBufferVec43T (Just (d, n, v)) _ =
   -- Need to send characters
   let next = d == 79
       done = n == 41 && next
@@ -281,6 +281,7 @@ delayBufferVec42T (Just (d, n, v)) _ =
 data BcdOrControl
   = Bcd (Unsigned 4)
   | Return
+  | Eot
   deriving stock (Generic, Show, Eq, Ord)
   deriving anyclass (NFData, NFDataX, ShowX)
 
@@ -296,9 +297,12 @@ bcdOrControlToAscii x =
   case x of
     Bcd bcd -> bcdToAscii $ pack bcd
     Return -> 10
+    Eot -> 4
 
 run :: HiddenClockResetEnable dom => Signal dom Bit -> Signal dom Bit
 run =
+  -- TODO: Realistically need to support something like ZMODEM if we want to be
+  -- broadly compatible.
   mealy uartTx8N1T Nothing
     . register Nothing
     . fmap (fmap bcdOrControlToAscii)
@@ -306,7 +310,7 @@ run =
     . fmap join
     . mealy delayBufferVec43T Nothing
     . register Nothing
-    . fmap (fmap (\(a, b) -> blankLeadingZeros a ++ (Just Return :> Nil) ++ blankLeadingZeros b ++ (Just Return :> Nil)))
+    . fmap (fmap (\(a, b) -> blankLeadingZeros a ++ (Just Return :> Nil) ++ blankLeadingZeros b ++ (Just Return :> Just Eot :> Nil)))
     . register Nothing
     . mealy bcd64T Nothing
     . register Nothing
@@ -392,6 +396,7 @@ testBench =
               ++ replicate (SNat :: SNat 1200) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput2
               ++ (charToUartRx '\n')
+              ++ charToUartRx (chr 4)
               ++ (1 :> Nil)
           )
       done = expectOutput (exposeClockResetEnable run clk rst en inputSignal)
