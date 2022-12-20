@@ -11,6 +11,7 @@ description:         Solution for an Advent of Code challenge
 dependencies:
   - base >= 4.7 && < 5
   - bytestring
+  - clash-cores
   - clash-prelude  >= 1.6.3 && < 1.8
   - clash-utils
   - clash-wavedrom

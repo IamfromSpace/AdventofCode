@@ -61,6 +61,19 @@ packages:
   original:
     git: https://github.com/iamfromspace/clash-utils
     commit: 6972bde2e31c76b486f964c94f9dd84b99028ed6
+- completed:
+    subdir: clash-cores
+    name: clash-cores
+    version: 1.5.0
+    git: https://github.com/clash-lang/clash-compiler
+    pantry-tree:
+      size: 1555
+      sha256: 9d1a0a663f963a3eb4cfaafd2b07db8db6800bce69c139653b0dcf5d19894e70
+    commit: e9242c36b11f2e2a287622fc76af207be64b36e2
+  original:
+    subdir: clash-cores
+    git: https://github.com/clash-lang/clash-compiler
+    commit: e9242c36b11f2e2a287622fc76af207be64b36e2
 snapshots:
 - completed:
     size: 590100
