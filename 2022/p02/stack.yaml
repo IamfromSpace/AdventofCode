@@ -1,0 +1,16 @@
+resolver: lts-18.28
+
+packages:
+- .
+
+extra-deps:
+- ../../util/haskell/advent-of-code
+- Hclip-3.0.0.4@sha256:df341c936594465df25c3b9f93f6ebe3110a36d64a51dbbd1dbd557394bbdba4,1648
+- clash-prelude-1.6.3
+- clash-lib-1.6.3
+- clash-ghc-1.6.3
+- ice40-prim-0.3.1.3@sha256:65d6369481055578322e3b4ff26fbeeff99d1849aae01c299cdccc77f66133da,2661
+- git: https://github.com/expipiplus1/clash-wavedrom
+  commit: f2cec861ff227ad574c0b4e7208cf72f9964b3f3
+- git: https://github.com/iamfromspace/clash-utils
+  commit: 6972bde2e31c76b486f964c94f9dd84b99028ed6
