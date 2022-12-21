@@ -8,6 +8,7 @@ import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
 import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
+import Clash.Explicit.Reset(convertReset)
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
@@ -228,9 +229,9 @@ run =
     . uartRx (SNat :: SNat 2083333)
 
 topEntity :: Clock Alchitry -> Reset Alchitry -> Enable Alchitry -> Signal AlchitryThird Bit -> Signal AlchitryThird Bit
-topEntity clk _ _ input =
+topEntity clk rst _ input =
   let (clk', _, _) = pllPadPrim 0 0 2 "SIMPLE" 1 "GENCLK" "FIXED" "FIXED" 0 0 0 clk (pure 0) (pure 1) (pure 0)
-   in exposeClockResetEnable run clk' resetGen enableGen input
+   in exposeClockResetEnable run clk' (convertReset clk clk' rst) enableGen input
 
 charToBit :: Char -> Int -> Bit
 charToBit char lsbIndex =
