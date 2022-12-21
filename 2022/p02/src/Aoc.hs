@@ -6,7 +6,7 @@ import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
-import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, vName, vPeriod, vResetPolarity)
+import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, vName, vPeriod, vResetPolarity, bundle, unbundle)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import Clash.Explicit.Reset(convertReset)
 import qualified Clash.Sized.Vector as Vector
@@ -116,9 +116,24 @@ scoreRound (Inst C X) = 6 + 1
 scoreRound (Inst C Y) = 0 + 2
 scoreRound (Inst C Z) = 3 + 3
 
+score2Round :: Inst -> Unsigned 64
+score2Round (Inst A X) = 0 + 3
+score2Round (Inst B X) = 0 + 1
+score2Round (Inst C X) = 0 + 2
+score2Round (Inst A Y) = 3 + 1
+score2Round (Inst B Y) = 3 + 2
+score2Round (Inst C Y) = 3 + 3
+score2Round (Inst A Z) = 6 + 2
+score2Round (Inst B Z) = 6 + 3
+score2Round (Inst C Z) = 6 + 1
+
 scoreT :: Unsigned 64 -> Input -> (Unsigned 64, Maybe (Unsigned 64))
 scoreT score Done = (0, Just score)
 scoreT score (More inst) = (score + scoreRound inst, Nothing)
+
+score2T :: Unsigned 64 -> Input -> (Unsigned 64, Maybe (Unsigned 64))
+score2T score Done = (0, Just score)
+score2T score (More inst) = (score + score2Round inst, Nothing)
 
 bcd64T ::
   Maybe (Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4)) ->
@@ -190,6 +205,13 @@ bcdOrControlToAscii x =
     Return -> 10
     Eot -> 4
 
+parAsync :: (Signal dom a -> Signal dom b) -> (Signal dom c -> Signal dom d) -> Signal dom (a, c) -> Signal dom (b, d)
+parAsync f g s =
+   let (sa, sb) = unbundle s
+       sa' = f sa
+       sb' = g sb
+   in bundle (sa', sb')
+
 -- Let's us arbitrarily group the number of times the state machine executes in
 -- combinational logic.  Possibly none!
 adapt :: Traversable t => (s -> a -> (s, b)) -> s -> t a -> (s, t b)
@@ -197,15 +219,17 @@ adapt m b ta =
   let (bs, ta') = traverse (fmap (\(b, a) -> ([b], a)) $ m b) ta
    in (last (b : bs), ta')
 
-runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
+runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64), Maybe (Unsigned 64))
 runCore =
-  fmap join
-    . mealy (adapt scoreT) 0
+  fmap (\(a, b) -> (join a, join b))
+    . parAsync (mealy (adapt scoreT) 0) (mealy (adapt score2T) 0)
+    . register (Nothing, Nothing)
+    . fmap (\x -> (x, x))
     . register Nothing
     . fmap join
     . mealy (adapt inputT) ZeroChars
 
-runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom (Maybe (Unsigned 64)) -> Signal dom Bit
+runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom (Maybe (Unsigned 64), Maybe (Unsigned 64)) -> Signal dom Bit
 runOutputU64 =
   fst
     . uartTx (SNat :: SNat 2083333)
@@ -214,16 +238,20 @@ runOutputU64 =
     . register Nothing
     . fmap join
     -- TODO: uartTx signals when ready for the next
-    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 22)) Nothing
+    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 43)) Nothing
     . register Nothing
-    . fmap (fmap (\x -> blankLeadingZeros x ++ (Just Return :> Just Eot :> Nil)))
-    . register Nothing
-    . mealy bcd64T Nothing
+    . fmap (fmap (\(a, b) -> blankLeadingZeros a ++ (Just Return :> Nil) ++ blankLeadingZeros b ++ (Just Return :> Just Eot :> Nil)))
+    -- NOTE: This isn't really guaranteed that both are not null at the same
+    -- time, but we know that both pipelines take exactly the same amount of
+    -- time.
+    . fmap (\(a,b) -> (,) <$> a <*> b)
+    . register (Nothing, Nothing)
+    . parAsync (mealy bcd64T Nothing) (mealy bcd64T Nothing)
 
 run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom Bit -> Signal dom Bit
 run =
   runOutputU64
-    . register Nothing
+    . register (Nothing, Nothing)
     . runCore
     . register Nothing
     . uartRx (SNat :: SNat 2083333)
@@ -254,7 +282,7 @@ testOutput1 :: Vec _ Char
 testOutput1 = $(listToVecTH "15")
 
 testOutput2 :: Vec _ Char
-testOutput2 = $(listToVecTH "")
+testOutput2 = $(listToVecTH "12")
 
 testInput :: Vec _ Bit
 testInput =
@@ -299,9 +327,12 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 2395) 1
+          ( replicate (SNat :: SNat 2396) 1
               ++ replicate (SNat :: SNat 2800) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput1
+              ++ charToUartRx '\n'
+              ++ replicate (SNat :: SNat 2800) 1 -- blank leading zeros
+              ++ Vector.concatMap charToUartRx testOutput2
               ++ charToUartRx '\n'
               ++ charToUartRx (chr 4)
               ++ (1 :> Nil)
