@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Aoc where
 
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
@@ -40,7 +41,8 @@ import Data.String (fromString)
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
-import GHC.TypeNats (Log2, type (+))
+import GHC.TypeNats (type (+))
+import GHC.TypeLits.Extra (CLog)
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
 import Text.Read (readMaybe)
@@ -137,21 +139,27 @@ bcd64T (Just (x, n, xBcd)) _ =
         then (Nothing, Just xBcd')
         else (Just (x, n - 1, xBcd'), Nothing)
 
--- TODO: Not sure how to make vector length abstract
-delayBufferVec22T ::
-  Maybe (Unsigned 8, Unsigned 5, Vec 22 a) ->
-  Maybe (Vec 22 a) ->
-  (Maybe (Unsigned 8, Unsigned 5, Vec 22 a), Maybe a)
-delayBufferVec22T Nothing Nothing =
+delayBufferVecT ::
+  KnownNat (CLog 2 (n + 1)) =>
+  KnownNat (CLog 2 (m + 1)) =>
+  KnownNat m =>
+  SNat (n + 1) ->
+  -- ^ How many clocks per output, 1 means no delay
+  SNat (m + 1) ->
+  -- ^ Vector length
+  Maybe (Unsigned (CLog 2 (n + 1)), Unsigned (CLog 2 (m + 1)), Vec (m + 1) a) ->
+  Maybe (Vec (m + 1) a) ->
+  (Maybe (Unsigned (CLog 2 (n + 1)), Unsigned (CLog 2 (m + 1)), Vec (m + 1) a), Maybe a)
+delayBufferVecT _ _ Nothing Nothing =
   -- Nothing to do, waiting for another input
   (Nothing, Nothing)
-delayBufferVec22T Nothing (Just v) =
+delayBufferVecT _ _ Nothing (Just v) =
   -- output just finished, grab it
   (Just (0, 0, v), Nothing)
-delayBufferVec22T (Just (d, n, v)) _ =
+delayBufferVecT clocksPerOutput depth (Just (d, n, v)) _ =
   -- Need to send characters
-  let next = d == 159
-      done = n == 21 && next
+  let next = d == snatToNum (subSNat clocksPerOutput (SNat :: SNat 1))
+      done = n == snatToNum (subSNat depth (SNat :: SNat 1)) && next
    in ( if done
           then Nothing
           else
@@ -205,7 +213,7 @@ runOutputU64 =
     . register Nothing
     . fmap join
     -- TODO: uartTx signals when ready for the next
-    . mealy delayBufferVec22T Nothing
+    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 22)) Nothing
     . register Nothing
     . fmap (fmap (\x -> blankLeadingZeros x ++ (Just Return :> Just Eot :> Nil)))
     . register Nothing
