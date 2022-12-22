@@ -129,8 +129,8 @@ twentyFourStep =
 histCompare :: BitHistState 0 -> (Bool, BitVector 52)
 histCompare (BitHistState d l r _ _ ) = (d, l .&. r)
 
-getPriority :: (Bool, BitVector 52) -> (Bool, Unsigned 64)
-getPriority (isDone, bv) = (isDone, (+) 1 $ fromIntegral $ Maybe.fromJust $ Vector.findIndex ((==) 1) $ Vector.reverse (unpack bv :: Vec 52 Bit))
+getPriority :: BitVector 52 -> Unsigned 64
+getPriority = (+) 1 . fromIntegral . Bits.countTrailingZeros
 
 sumT :: Unsigned 64 -> (Bool, Unsigned 64) -> (Unsigned 64, Maybe (Unsigned 64))
 sumT acc (True, new) = (0, Just (acc + new))
@@ -224,7 +224,7 @@ runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Sig
 runCore =
   fmap join
     . mealy (adapt sumT) 0
-    . fmap (fmap getPriority)
+    . fmap (fmap (fmap getPriority))
     . register Nothing
     . fmap (fmap histCompare)
     . register Nothing
