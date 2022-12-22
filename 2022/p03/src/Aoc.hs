@@ -21,6 +21,7 @@ import Control.Monad (join)
 import qualified Control.Monad.State.Lazy as Stae
 import qualified Crypto.Hash.MD5 as MD5
 import qualified Data.Bits as Bits
+import Data.Bits ((.&.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.UTF8 ()
@@ -54,7 +55,86 @@ createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, 
 
 createDomain (knownVDomain @System){vName="AlchitryThird", vResetPolarity=ActiveLow, vPeriod=30000}
 
+data Feed
+  = Done
+  | NewLine
+  | Char (Unsigned 6)
 
+parse :: BitVector 8 -> Feed
+parse 4 = Done
+parse 10 = NewLine
+parse x =
+  Char (fromIntegral (if x >= 97 then x - 97 else x - 65 + 26))
+
+-- Timing is a bit funny here...  We might get a full length one that we feed to the next step, but then immediately send a bunch of short ones before the next processing is done.
+-- Do we _need_ to queue this?
+-- We know that there are at least two elements and a new line (we know it
+-- can't be empty, because there must a match), so we have to get everything
+-- done in three clock cycles before the one behind could show up.
+buildT ::
+  (Unsigned 6, Vec 48 (Maybe (Unsigned 6))) ->
+  Feed ->
+  ((Unsigned 6, Vec 48 (Maybe (Unsigned 6))), Maybe (Bool, Unsigned 6, Vec 48 (Maybe (Unsigned 6))))
+buildT (len, v) NewLine = ((0, repeat Nothing), Just (False, len `div` 2, v))
+buildT (len, v) Done = ((0, repeat Nothing), Just (True, len `div` 2, v))
+buildT (len, v) (Char x) = ((len + 1, fst $ Vector.shiftInAt0 v (pure x :> Nil)), Nothing)
+
+toBitHistState :: (Bool, Unsigned 6, Vec 48 (Maybe (Unsigned 6))) -> BitHistState 24
+toBitHistState (isDone, halfLen, v) =
+  let left = Vector.imap (\i x -> if fromIntegral i >= halfLen then Nothing else x) (Vector.take (SNat :: SNat 24) v)
+      right = Vector.take (SNat :: SNat 24) (Vector.rotateLeft v halfLen)
+  in BitHistState isDone 0 0 left right
+
+data BitHistState n = BitHistState
+  { isDone :: Bool,
+    leftHist :: BitVector 52,
+    rightHist :: BitVector 52,
+    left :: Vec n (Maybe (Unsigned 6)),
+    right :: Vec n (Maybe (Unsigned 6))
+  }
+  deriving stock (Generic)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+stepHelper :: KnownNat n => Unsigned 8 -> BitHistState n -> BitHistState n
+stepHelper i (BitHistState d lh rh l r) =
+  BitHistState
+     d
+     (maybe lh (\x -> replaceBit x 1 lh) (l !! i))
+     (maybe rh (\x -> replaceBit x 1 rh) (r !! i))
+     l
+     r
+
+threeStepT :: KnownNat n => Maybe (Unsigned 1, BitHistState (n + 3)) -> Maybe (BitHistState (n + 3)) -> (Maybe (Unsigned 1, BitHistState (n + 3)), Maybe (BitHistState n))
+threeStepT Nothing Nothing =
+  (Nothing, Nothing)
+threeStepT Nothing (Just bhs) =
+  (Just (0, stepHelper 0 bhs), Nothing)
+threeStepT (Just (0, bhs)) _ =
+  (Just (1, stepHelper 1 bhs), Nothing)
+threeStepT (Just (1, bhs)) _ =
+  let (BitHistState d lh rh l r) = stepHelper 2 bhs
+   in (Nothing, Just (BitHistState d lh rh (Vector.drop (SNat :: SNat 3) l) (Vector.drop (SNat :: SNat 3) r)))
+
+twentyFourStep :: HiddenClockResetEnable dom => Signal dom (Maybe (BitHistState 24)) -> Signal dom (Maybe (BitHistState 0))
+twentyFourStep =
+  mealy threeStepT Nothing
+    . mealy threeStepT Nothing
+    . mealy threeStepT Nothing
+    . mealy threeStepT Nothing
+    . mealy threeStepT Nothing
+    . mealy threeStepT Nothing
+    . mealy threeStepT Nothing
+    . mealy threeStepT Nothing
+
+histCompare :: BitHistState 0 -> (Bool, BitVector 52)
+histCompare (BitHistState d l r _ _ ) = (d, l .&. r)
+
+getPriority :: (Bool, BitVector 52) -> (Bool, Unsigned 64)
+getPriority (isDone, bv) = (isDone, (+) 1 $ fromIntegral $ Maybe.fromJust $ Vector.findIndex ((==) 1) $ Vector.reverse (unpack bv :: Vec 52 Bit))
+
+sumT :: Unsigned 64 -> (Bool, Unsigned 64) -> (Unsigned 64, Maybe (Unsigned 64))
+sumT acc (True, new) = (0, Just (acc + new))
+sumT acc (False, new) = (acc + new, Nothing)
 
 bcd64T ::
   Maybe (Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4)) ->
@@ -140,11 +220,24 @@ adapt m b ta =
   let (bs, ta') = traverse (fmap (\(b, a) -> ([b], a)) $ m b) ta
    in (last (b : bs), ta')
 
-runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64), Maybe (Unsigned 64))
+runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore =
-  pure (pure (Nothing, Nothing))
+  fmap join
+    . mealy (adapt sumT) 0
+    . fmap (fmap getPriority)
+    . register Nothing
+    . fmap (fmap histCompare)
+    . register Nothing
+    . twentyFourStep
+    -- . fmap (pure Nothing)
+    . register Nothing
+    . fmap (fmap toBitHistState)
+    . register Nothing
+    . fmap join
+    . mealy (adapt buildT) (0, repeat Nothing)
+    . fmap (fmap parse)
 
-runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom (Maybe (Unsigned 64), Maybe (Unsigned 64)) -> Signal dom Bit
+runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom (Maybe (Unsigned 64)) -> Signal dom Bit
 runOutputU64 =
   fst
     . uartTx (SNat :: SNat 2083333)
@@ -153,20 +246,16 @@ runOutputU64 =
     . register Nothing
     . fmap join
     -- TODO: uartTx signals when ready for the next
-    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 43)) Nothing
+    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 22)) Nothing
     . register Nothing
-    . fmap (fmap (\(a, b) -> blankLeadingZeros a ++ (Just Return :> Nil) ++ blankLeadingZeros b ++ (Just Return :> Just Eot :> Nil)))
-    -- NOTE: This isn't really guaranteed that both are not null at the same
-    -- time, but we know that both pipelines take exactly the same amount of
-    -- time.
-    . fmap (\(a, b) -> (,) <$> a <*> b)
-    . register (Nothing, Nothing)
-    . parAsync (mealy bcd64T Nothing) (mealy bcd64T Nothing)
+    . fmap (fmap (\x -> blankLeadingZeros x ++ (Just Return :> Just Eot :> Nil)))
+    . register Nothing
+    . mealy bcd64T Nothing
 
 run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom Bit -> Signal dom Bit
 run =
   runOutputU64
-    . register (Nothing, Nothing)
+    . register Nothing
     . runCore
     . register Nothing
     . uartRx (SNat :: SNat 2083333)
@@ -194,14 +283,14 @@ charToUartRx char =
     ++ replicate (SNat :: SNat 16) 1
 
 testOutput1 :: Vec _ Char
-testOutput1 = $(listToVecTH "")
+testOutput1 = $(listToVecTH "157")
 
 testOutput2 :: Vec _ Char
 testOutput2 = $(listToVecTH "")
 
 testInput :: Vec _ Bit
 testInput =
-  let raw = $(listToVecTH "")
+  let raw = $(listToVecTH "vJrwpWtwJgWrhcsFMMfFFhFp\njqHRNqRjqzjGDLGLrsFMfFZSrLrFZsSL\nPmmdzqPrVvPwwTWBwg\nwMqvLMZHhHMvwLHjbvcjnnSBnvTQFn\nttgJtRGJQctTZtZT\nCrZsJsPPZsGzwwsLwLmpwMDw")
    in ( (1 :> 1 :> 1 :> 1 :> Nil)
           ++ Vector.concatMap charToUartRx raw
           ++ charToUartRx (chr 4)
@@ -210,7 +299,7 @@ testInput =
 
 testInputCore :: Vec _ (Maybe (BitVector 8))
 testInputCore =
-  let raw = $(listToVecTH "A Y\nB X\nC Z\n")
+  let raw = $(listToVecTH "abdefghiZjklmnopqrstuvwxABDEFGHIJKLMNOPQRSZTUVWX\naa")
    in ( (Nothing :> Nil)
           ++ fmap (Just . fromIntegral . ord) raw
           ++ (Just 4 :> Nothing :> Nil)
@@ -229,8 +318,8 @@ copyWavedrom =
       clk = tbClockGen (False <$ out)
       rst = resetGen :: Reset System
       inputSignal = stimuliGenerator clk rst testInputCore
-      out = InOut <$> fmap WithBits inputSignal <*> fmap WithBits (exposeClockResetEnable runCore clk rst en inputSignal)
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 99 "" out
+      out = InOut <$> fmap (Maybe.fromMaybe 0) inputSignal <*> fmap (Maybe.fromMaybe 0) (exposeClockResetEnable runCore clk rst en inputSignal)
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 200 "" out
 
 testBench :: Signal AlchitryThird Bool
 testBench =
@@ -242,12 +331,9 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 2396) 1
-              ++ replicate (SNat :: SNat 3000) 1 -- blank leading zeros
+          ( replicate (SNat :: SNat 24254) 1
+              ++ replicate (SNat :: SNat 2720) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput1
-              ++ charToUartRx '\n'
-              ++ replicate (SNat :: SNat 3000) 1 -- blank leading zeros
-              ++ Vector.concatMap charToUartRx testOutput2
               ++ charToUartRx '\n'
               ++ charToUartRx (chr 4)
               ++ (1 :> Nil)
