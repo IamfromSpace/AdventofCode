@@ -1,14 +1,15 @@
 {-# LANGUAGE FlexibleContexts #-}
+
 module Aoc where
 
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
 import Clash.Class.BitPack (BitPack (pack, unpack), (!))
 import Clash.Class.Resize (resize)
 import Clash.Cores.UART (uartRx, uartTx)
+import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
-import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, vName, vPeriod, vResetPolarity, bundle, unbundle)
+import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, unbundle, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
-import Clash.Explicit.Reset(convertReset)
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
@@ -48,10 +49,10 @@ import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
 import Text.Read (readMaybe)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
+
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
 
 createDomain (knownVDomain @System){vName="AlchitryThird", vResetPolarity=ActiveLow, vPeriod=30000}
-
 
 data CodeL
   = A
@@ -207,9 +208,9 @@ bcdOrControlToAscii x =
 
 parAsync :: (Signal dom a -> Signal dom b) -> (Signal dom c -> Signal dom d) -> Signal dom (a, c) -> Signal dom (b, d)
 parAsync f g s =
-   let (sa, sb) = unbundle s
-       sa' = f sa
-       sb' = g sb
+  let (sa, sb) = unbundle s
+      sa' = f sa
+      sb' = g sb
    in bundle (sa', sb')
 
 -- Let's us arbitrarily group the number of times the state machine executes in
@@ -244,7 +245,7 @@ runOutputU64 =
     -- NOTE: This isn't really guaranteed that both are not null at the same
     -- time, but we know that both pipelines take exactly the same amount of
     -- time.
-    . fmap (\(a,b) -> (,) <$> a <*> b)
+    . fmap (\(a, b) -> (,) <$> a <*> b)
     . register (Nothing, Nothing)
     . parAsync (mealy bcd64T Nothing) (mealy bcd64T Nothing)
 
