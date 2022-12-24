@@ -9,6 +9,7 @@ import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
 import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, unbundle, vName, vPeriod, vResetPolarity)
+import Clash.Prelude.BlockRam (blockRamU, ResetStrategy(NoClearOnReset))
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
@@ -59,6 +60,8 @@ data Feed
   = Done
   | NewLine
   | Char (Unsigned 6)
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData, NFDataX, ShowX)
 
 parse :: BitVector 8 -> Feed
 parse 4 = Done
@@ -66,75 +69,90 @@ parse 10 = NewLine
 parse x =
   Char (fromIntegral (if x >= 97 then x - 97 else x - 65 + 26))
 
--- Timing is a bit funny here...  We might get a full length one that we feed to the next step, but then immediately send a bunch of short ones before the next processing is done.
--- Do we _need_ to queue this?
--- We know that there are at least two elements and a new line (we know it
--- can't be empty, because there must a match), so we have to get everything
--- done in three clock cycles before the one behind could show up.
-buildT ::
-  (Unsigned 6, Vec 48 (Maybe (Unsigned 6))) ->
-  Feed ->
-  ((Unsigned 6, Vec 48 (Maybe (Unsigned 6))), Maybe (Bool, Unsigned 6, Vec 48 (Maybe (Unsigned 6))))
-buildT (len, v) NewLine = ((0, repeat Nothing), Just (False, len `div` 2, v))
-buildT (len, v) Done = ((0, repeat Nothing), Just (True, len `div` 2, v))
-buildT (len, v) (Char x) = ((len + 1, fst $ Vector.shiftInAt0 v (pure x :> Nil)), Nothing)
-
-toBitHistState :: (Bool, Unsigned 6, Vec 48 (Maybe (Unsigned 6))) -> BitHistState 24
-toBitHistState (isDone, halfLen, v) =
-  let left = Vector.imap (\i x -> if fromIntegral i >= halfLen then Nothing else x) (Vector.take (SNat :: SNat 24) v)
-      right = Vector.take (SNat :: SNat 24) (Vector.rotateLeft v halfLen)
-  in BitHistState isDone 0 0 left right
-
-data BitHistState n = BitHistState
-  { isDone :: Bool,
-    leftHist :: BitVector 52,
-    rightHist :: BitVector 52,
-    left :: Vec n (Maybe (Unsigned 6)),
-    right :: Vec n (Maybe (Unsigned 6))
-  }
-  deriving stock (Generic)
+data StoreTState addr =
+  StoreTState
+    { sLinePointer :: addr,
+      sCharPointer :: addr,
+      len :: Unsigned 6
+    }
+  deriving stock (Generic, Show, Eq, Ord)
   deriving anyclass (NFData, NFDataX, ShowX)
 
-stepHelper :: KnownNat n => Unsigned 8 -> BitHistState n -> BitHistState n
-stepHelper i (BitHistState d lh rh l r) =
-  BitHistState
-     d
-     (maybe lh (\x -> replaceBit x 1 lh) (l !! i))
-     (maybe rh (\x -> replaceBit x 1 rh) (r !! i))
-     l
-     r
+storeT ::
+  Num addr =>
+  StoreTState addr ->
+  Maybe Feed ->
+  ( StoreTState addr
+  , ( Maybe (addr, (Bool, Unsigned 6))
+    , Maybe (addr, Unsigned 6)
+    , addr
+    )
+  )
+storeT s@StoreTState { sLinePointer = slp } Nothing =
+  (s, (Nothing, Nothing, slp))
+storeT s@StoreTState { sLinePointer = slp, sCharPointer = scp, len } (Just (Char c)) =
+  -- A new character was received, advance the character pointer and write it
+  ( s { sCharPointer = scp + 1, len = len + 1 }
+  , (Nothing, Just (scp, c), slp)
+  )
+storeT s@StoreTState { sLinePointer = slp, len } (Just x) =
+  -- We're at the end of the line (which might be the last).  We update our
+  -- line queue entry and advance our pointer and reset our line length
+  -- counter.
+  let slp' = slp + 1
+  in  ( s { sLinePointer = slp', len = 0 }
+      , (Just (slp, (x == Done, len `div` 2)), Nothing, slp')
+      )
 
-threeStepT :: KnownNat n => Maybe (Unsigned 1, BitHistState (n + 3)) -> Maybe (BitHistState (n + 3)) -> (Maybe (Unsigned 1, BitHistState (n + 3)), Maybe (BitHistState n))
-threeStepT Nothing Nothing =
-  (Nothing, Nothing)
-threeStepT Nothing (Just bhs) =
-  (Just (0, stepHelper 0 bhs), Nothing)
-threeStepT (Just (0, bhs)) _ =
-  (Just (1, stepHelper 1 bhs), Nothing)
-threeStepT (Just (1, bhs)) _ =
-  let (BitHistState d lh rh l r) = stepHelper 2 bhs
-   in (Nothing, Just (BitHistState d lh rh (Vector.drop (SNat :: SNat 3) l) (Vector.drop (SNat :: SNat 3) r)))
+data RetrieveTState addr =
+  RetrieveTState
+    { rLinePointer :: addr,
+      rCharPointer :: addr,
+      charCount :: Unsigned 6,
+      isLeft :: Bool,
+      bv :: BitVector 52
+    }
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData, NFDataX, ShowX)
 
-twentyFourStep :: HiddenClockResetEnable dom => Signal dom (Maybe (BitHistState 24)) -> Signal dom (Maybe (BitHistState 0))
-twentyFourStep =
-  mealy threeStepT Nothing
-    . mealy threeStepT Nothing
-    . mealy threeStepT Nothing
-    . mealy threeStepT Nothing
-    . mealy threeStepT Nothing
-    . mealy threeStepT Nothing
-    . mealy threeStepT Nothing
-    . mealy threeStepT Nothing
+-- Note our queue can't actually be completely full (can't distinguish full and
+-- empty here)
+retrieveT :: Eq addr => Num addr => RetrieveTState addr -> ((Bool, Unsigned 6), Unsigned 6, addr) -> (RetrieveTState addr, (addr, addr, Maybe (Bool, BitVector 52)))
+retrieveT s@RetrieveTState { rLinePointer = rlp, rCharPointer = rcp, charCount, bv, isLeft } ((isFinalLine, halfLineLen), charEntry, producerLinePointer) =
+  if producerLinePointer /= rlp then
+    let
+      thisHalfDone = charCount + 1 == halfLineLen
+      charCount' = if thisHalfDone then 0 else charCount + 1
+      isLeft' = if thisHalfDone then not isLeft else isLeft
+      isLineDone = not isLeft && thisHalfDone
+      rlp' = rlp + if isLineDone then 1 else 0
+      rcp' = rcp + 1
+      bvOut = replaceBit charEntry 1 bv
+      bvStored = if thisHalfDone then 0 else replaceBit charEntry 1 bvOut
+    in
+      (s
+        { rLinePointer = rlp'
+        , rCharPointer = rcp'
+        , charCount = charCount'
+        , bv = bvStored
+        , isLeft = isLeft'
+        }
+      , ( rlp'
+        , rcp'
+        , if thisHalfDone then Just (isFinalLine, bvOut) else Nothing
+        )
+      )
+  else
+    (s, (rlp, rcp, Nothing))
 
-histCompare :: BitHistState 0 -> (Bool, BitVector 52)
-histCompare (BitHistState d l r _ _ ) = (d, l .&. r)
+priorityT :: Maybe (BitVector 52) -> Maybe (Bool, BitVector 52) -> (Maybe (BitVector 52), Maybe (Bool, Unsigned 6))
+priorityT Nothing x = (fmap snd x, Nothing)
+priorityT (Just a) (Just (isDone, b)) = (Nothing, Just (isDone, (+) 1 $ fromIntegral $ Bits.countTrailingZeros (a .&. b)))
+priorityT x Nothing = (x, Nothing)
 
-getPriority :: BitVector 52 -> Unsigned 64
-getPriority = (+) 1 . fromIntegral . Bits.countTrailingZeros
-
-sumT :: Unsigned 64 -> (Bool, Unsigned 64) -> (Unsigned 64, Maybe (Unsigned 64))
-sumT acc (True, new) = (0, Just (acc + new))
-sumT acc (False, new) = (acc + new, Nothing)
+sumT :: Unsigned 64 -> (Bool, Unsigned 6) -> (Unsigned 64, Maybe (Unsigned 64))
+sumT acc (True, new) = (0, Just (acc + fromIntegral new))
+sumT acc (False, new) = (acc + fromIntegral new, Nothing)
 
 bcd64T ::
   Maybe (Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4)) ->
@@ -206,13 +224,6 @@ bcdOrControlToAscii x =
     Return -> 10
     Eot -> 4
 
-parAsync :: (Signal dom a -> Signal dom b) -> (Signal dom c -> Signal dom d) -> Signal dom (a, c) -> Signal dom (b, d)
-parAsync f g s =
-  let (sa, sb) = unbundle s
-      sa' = f sa
-      sb' = g sb
-   in bundle (sa', sb')
-
 -- Let's us arbitrarily group the number of times the state machine executes in
 -- combinational logic.  Possibly none!
 adapt :: Traversable t => (s -> a -> (s, b)) -> s -> t a -> (s, t b)
@@ -221,21 +232,19 @@ adapt m b ta =
    in (last (b : bs), ta')
 
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
-runCore =
-  fmap join
-    . mealy (adapt sumT) 0
-    . fmap (fmap (fmap getPriority))
-    . register Nothing
-    . fmap (fmap histCompare)
-    . register Nothing
-    . twentyFourStep
-    -- . fmap (pure Nothing)
-    . register Nothing
-    . fmap (fmap toBitHistState)
-    . register Nothing
-    . fmap join
-    . mealy (adapt buildT) (0, repeat Nothing)
-    . fmap (fmap parse)
+runCore maybeByteSig =
+  let
+    bRamSize = SNat :: SNat 256
+    parsed = register Nothing $ fmap (fmap parse) maybeByteSig
+    (mLineWrite, mCharWrite, lineWriteAddr) = unbundle $ mealy storeT (StoreTState (0 :: Unsigned 8) 0 0) parsed
+    lineWriteAddr' = register 0 $ register 0 lineWriteAddr
+    (lineRead, charRead, bvs) = unbundle $ mealy retrieveT (RetrieveTState 0 0 0 True 0) $ bundle (lineRamOut, charRamOut, lineWriteAddr')
+    lineRamOut = blockRamU NoClearOnReset bRamSize undefined lineRead mLineWrite
+    charRamOut = blockRamU NoClearOnReset bRamSize undefined charRead mCharWrite
+    priorities = mealy priorityT Nothing bvs
+    out = join <$> mealy (adapt sumT) 0 priorities
+  in
+    out
 
 runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom (Maybe (Unsigned 64)) -> Signal dom Bit
 runOutputU64 =
@@ -331,7 +340,7 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 24254) 1
+          ( replicate (SNat :: SNat 24260) 1
               ++ replicate (SNat :: SNat 2720) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput1
               ++ charToUartRx '\n'
