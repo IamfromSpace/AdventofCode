@@ -128,7 +128,7 @@ retrieveT s@RetrieveTState { rLinePointer = rlp, rCharPointer = rcp, charCount, 
       rlp' = rlp + if isLineDone then 1 else 0
       rcp' = rcp + 1
       bvOut = replaceBit charEntry 1 bv
-      bvStored = if thisHalfDone then 0 else replaceBit charEntry 1 bvOut
+      bvStored = if thisHalfDone then 0 else bvOut
     in
       (s
         { rLinePointer = rlp'
