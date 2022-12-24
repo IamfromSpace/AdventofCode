@@ -8,8 +8,8 @@ import Clash.Class.Resize (resize)
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
-import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, unbundle, vName, vPeriod, vResetPolarity)
-import Clash.Prelude.BlockRam (blockRamU, ResetStrategy(NoClearOnReset))
+import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, unbundle, vName, vPeriod, vResetPolarity, Index)
+import Clash.Prelude.BlockRam (trueDualPortBlockRam, RamOp(..))
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
@@ -234,13 +234,13 @@ adapt m b ta =
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore maybeByteSig =
   let
-    bRamSize = SNat :: SNat 256
+    maybeToWriteOp = maybe RamNoOp (uncurry RamWrite)
     parsed = register Nothing $ fmap (fmap parse) maybeByteSig
-    (mLineWrite, mCharWrite, lineWriteAddr) = unbundle $ mealy storeT (StoreTState (0 :: Unsigned 8) 0 0) parsed
-    lineWriteAddr' = register 0 $ register 0 lineWriteAddr
+    (mLineWrite, mCharWrite, lineWriteAddr) = unbundle $ mealy storeT (StoreTState (0 :: Index 256) 0 0) parsed
+    lineWriteAddr' = register 0 $ register 0 $ register 0 lineWriteAddr
     (lineRead, charRead, bvs) = unbundle $ mealy retrieveT (RetrieveTState 0 0 0 True 0) $ bundle (lineRamOut, charRamOut, lineWriteAddr')
-    lineRamOut = blockRamU NoClearOnReset bRamSize undefined lineRead mLineWrite
-    charRamOut = blockRamU NoClearOnReset bRamSize undefined charRead mCharWrite
+    (_, lineRamOut) = trueDualPortBlockRam (maybeToWriteOp <$> mLineWrite) (RamRead <$> lineRead)
+    (_, charRamOut) = trueDualPortBlockRam (maybeToWriteOp <$> mCharWrite) (RamRead <$> charRead)
     priorities = mealy priorityT Nothing bvs
     out = join <$> mealy (adapt sumT) 0 priorities
   in
@@ -340,7 +340,7 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 24260) 1
+          ( replicate (SNat :: SNat 24261) 1
               ++ replicate (SNat :: SNat 2720) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput1
               ++ charToUartRx '\n'
