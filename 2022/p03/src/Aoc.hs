@@ -12,7 +12,7 @@ import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenC
 import Clash.Prelude.BlockRam (trueDualPortBlockRam, RamOp(..))
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import qualified Clash.Sized.Vector as Vector
-import Clash.WaveDrom (ToWave, WithBits (WithBits), render, wavedromWithClock)
+import Clash.WaveDrom (ToWave, WithBits (WithBits), render, BitsWave(BitsWave), ShowWave(ShowWave), wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
 import Control.Applicative (pure, (<*>), (<|>))
 import qualified Control.Applicative as App
@@ -164,25 +164,37 @@ sumT :: Unsigned 64 -> (Bool, Unsigned 6) -> (Unsigned 64, Maybe (Unsigned 64))
 sumT acc (True, new) = (0, Just (acc + fromIntegral new))
 sumT acc (False, new) = (acc + fromIntegral new, Nothing)
 
+elfHistogramT :: BitVector 52 -> Feed -> (BitVector 52, Maybe (Bool, BitVector 52))
+elfHistogramT bv (Char char) =
+  (replaceBit char 1 bv, Nothing)
+elfHistogramT bv x =
+  (0, Just (x == Done, bv))
+
+priorityT2 :: Maybe (Bit, BitVector 52) -> (Bool, BitVector 52) -> (Maybe (Bit, BitVector 52), Maybe (Bool, Unsigned 6))
+priorityT2 Nothing x = (Just (0, snd x), Nothing)
+priorityT2 (Just (0, a)) (_, b) = (Just (1, a .&. b), Nothing)
+priorityT2 (Just (1, aAndB)) (isDone, c) = (Nothing, Just (isDone, (+) 1 $ fromIntegral $ Bits.countTrailingZeros (aAndB .&. c)))
+
 bcd64T ::
-  Maybe (Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4)) ->
-  Maybe (Unsigned 64) ->
-  ( Maybe (Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4)),
-    Maybe (Vec 20 (Unsigned 4))
+  Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
+  Maybe (Unsigned 64, Unsigned 64) ->
+  ( Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)),
+    Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4))
   )
 bcd64T Nothing Nothing =
   -- Nothing in progress, no new values to convert
   (Nothing, Nothing)
-bcd64T Nothing (Just x) =
+bcd64T Nothing (Just (a, b)) =
   -- New values to convert
-  (Just (x, 63, repeat 0), Nothing)
-bcd64T (Just (x, n, xBcd)) _ =
+  (Just (a, b, 63, repeat 0, repeat 0), Nothing)
+bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
   -- Convert values in progress
-  let xBcd' = convertStep (x ! n) xBcd
+  let aBcd' = convertStep (a ! n) aBcd
+      bBcd' = convertStep (b ! n) bBcd
       done = n == 0
    in if done
-        then (Nothing, Just xBcd')
-        else (Just (x, n - 1, xBcd'), Nothing)
+        then (Nothing, Just (aBcd', bBcd'))
+        else (Just (a, b, (n - 1), aBcd', bBcd'), Nothing)
 
 delayBufferVecT ::
   KnownNat (CLog 2 (n + 1)) =>
@@ -234,6 +246,12 @@ bcdOrControlToAscii x =
     Return -> 10
     Eot -> 4
 
+awaitBothT :: (Maybe a, Maybe b) -> (Maybe a, Maybe b) -> ((Maybe a, Maybe b), Maybe (a,b))
+awaitBothT (mar, mbr) (mai, mbi) =
+   case (mar <|> mai, mbr <|> mbi) of
+     (Just a, Just b) -> ((Nothing, Nothing), Just (a, b))
+     x -> (x, Nothing)
+
 -- Let's us arbitrarily group the number of times the state machine executes in
 -- combinational logic.  Possibly none!
 adapt :: Traversable t => (s -> a -> (s, b)) -> s -> t a -> (s, t b)
@@ -241,11 +259,10 @@ adapt m b ta =
   let (bs, ta') = traverse (fmap (\(b, a) -> ([b], a)) $ m b) ta
    in (last (b : bs), ta')
 
-runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
-runCore maybeByteSig =
+runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe Feed) -> Signal dom (Maybe (Unsigned 64))
+runCore1 parsed =
   let
     maybeToWriteOp = maybe RamNoOp (uncurry RamWrite)
-    parsed = register Nothing $ fmap (fmap parse) maybeByteSig
     (mLineWrite, mCharWrite, lineWriteAddr) = unbundle $ mealy storeT (StoreTState (0 :: Index 256) 0 0) parsed
     lineWriteAddr' = register 0 $ register 0 $ register 0 lineWriteAddr
     (lineRead, charRead, bvs) = unbundle $ mealy retrieveT (RetrieveTState 0 0 0 True 0) $ bundle (lineRamOut, charRamOut, lineWriteAddr')
@@ -256,7 +273,26 @@ runCore maybeByteSig =
   in
     out
 
-runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 80000) => Signal dom (Maybe (Unsigned 64)) -> Signal dom Bit
+runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe Feed) -> Signal dom (Maybe (Unsigned 64))
+runCore2 parsed =
+  let
+    hists = join <$> mealy (adapt elfHistogramT) 0 parsed
+    priorities = join <$> mealy (adapt priorityT2) Nothing hists
+    out = join <$> mealy (adapt sumT) 0 priorities
+  in
+    out
+
+runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64, Unsigned 64))
+runCore maybeByteSig =
+  let
+    parsed = register Nothing $ fmap (fmap parse) maybeByteSig
+    part1 = runCore1 parsed
+    part2 = runCore2 parsed
+    out = mealy awaitBothT (Nothing, Nothing) (bundle (part1, part2))
+  in
+    out
+
+runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 80000) => Signal dom (Maybe (Unsigned 64, Unsigned 64)) -> Signal dom Bit
 runOutputU64 =
   fst
     . uartTx (SNat :: SNat 781250)
@@ -265,9 +301,9 @@ runOutputU64 =
     . register Nothing
     . fmap join
     -- TODO: uartTx signals when ready for the next
-    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 22)) Nothing
+    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 43)) Nothing
     . register Nothing
-    . fmap (fmap (\x -> blankLeadingZeros x ++ (Just Return :> Just Eot :> Nil)))
+    . fmap (fmap (\(a, b) -> blankLeadingZeros a ++ (Just Return :> Nil) ++ blankLeadingZeros b ++ (Just Return :> Just Eot :> Nil)))
     . register Nothing
     . mealy bcd64T Nothing
 
@@ -305,7 +341,7 @@ testOutput1 :: Vec _ Char
 testOutput1 = $(listToVecTH "157")
 
 testOutput2 :: Vec _ Char
-testOutput2 = $(listToVecTH "")
+testOutput2 = $(listToVecTH "70")
 
 testInput :: Vec _ Bit
 testInput =
@@ -337,7 +373,7 @@ copyWavedrom =
       clk = tbClockGen (False <$ out)
       rst = resetGen :: Reset System
       inputSignal = stimuliGenerator clk rst testInputCore
-      out = InOut <$> fmap (Maybe.fromMaybe 0) inputSignal <*> fmap (Maybe.fromMaybe 0) (exposeClockResetEnable runCore clk rst en inputSignal)
+      out = InOut <$> fmap BitsWave inputSignal <*> fmap ShowWave (exposeClockResetEnable runCore clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 200 "" out
 
 testBench :: Signal Alchitry8 Bool
@@ -353,6 +389,9 @@ testBench =
           ( replicate (SNat :: SNat 24261) 1
               ++ replicate (SNat :: SNat 2720) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput1
+              ++ charToUartRx '\n'
+              ++ replicate (SNat :: SNat 2880) 1 -- blank leading zeros
+              ++ Vector.concatMap charToUartRx testOutput2
               ++ charToUartRx '\n'
               ++ charToUartRx (chr 4)
               ++ (1 :> Nil)
