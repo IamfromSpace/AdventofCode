@@ -80,6 +80,8 @@ data StoreTState addr =
 
 storeT ::
   Num addr =>
+  Bounded addr =>
+  Eq addr =>
   StoreTState addr ->
   Maybe Feed ->
   ( StoreTState addr
@@ -92,14 +94,14 @@ storeT s@StoreTState { sLinePointer = slp } Nothing =
   (s, (Nothing, Nothing, slp))
 storeT s@StoreTState { sLinePointer = slp, sCharPointer = scp, len } (Just (Char c)) =
   -- A new character was received, advance the character pointer and write it
-  ( s { sCharPointer = scp + 1, len = len + 1 }
+  ( s { sCharPointer = if scp == maxBound then 0 else scp + 1, len = len + 1 }
   , (Nothing, Just (scp, c), slp)
   )
 storeT s@StoreTState { sLinePointer = slp, len } (Just x) =
   -- We're at the end of the line (which might be the last).  We update our
   -- line queue entry and advance our pointer and reset our line length
   -- counter.
-  let slp' = slp + 1
+  let slp' = if slp == maxBound then 0 else slp + 1
   in  ( s { sLinePointer = slp', len = 0 }
       , (Just (slp, (x == Done, len `div` 2)), Nothing, slp')
       )
@@ -117,7 +119,7 @@ data RetrieveTState addr =
 
 -- Note our queue can't actually be completely full (can't distinguish full and
 -- empty here)
-retrieveT :: Eq addr => Num addr => RetrieveTState addr -> ((Bool, Unsigned 6), Unsigned 6, addr) -> (RetrieveTState addr, (addr, addr, Maybe (Bool, BitVector 52)))
+retrieveT :: Bounded addr => Eq addr => Num addr => RetrieveTState addr -> ((Bool, Unsigned 6), Unsigned 6, addr) -> (RetrieveTState addr, (addr, addr, Maybe (Bool, BitVector 52)))
 retrieveT s@RetrieveTState { rLinePointer = rlp, rCharPointer = rcp, charCount, bv, isLeft } ((isFinalLine, halfLineLen), charEntry, producerLinePointer) =
   if producerLinePointer /= rlp then
     let
@@ -125,8 +127,8 @@ retrieveT s@RetrieveTState { rLinePointer = rlp, rCharPointer = rcp, charCount, 
       charCount' = if thisHalfDone then 0 else charCount + 1
       isLeft' = if thisHalfDone then not isLeft else isLeft
       isLineDone = not isLeft && thisHalfDone
-      rlp' = rlp + if isLineDone then 1 else 0
-      rcp' = rcp + 1
+      rlp' = if isLineDone then (if rlp == maxBound then 0 else rlp + 1) else rlp
+      rcp' = if rcp == maxBound then 0 else rcp + 1
       bvOut = replaceBit charEntry 1 bv
       bvStored = if thisHalfDone then 0 else bvOut
     in
