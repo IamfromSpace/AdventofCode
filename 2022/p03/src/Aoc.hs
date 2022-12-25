@@ -8,7 +8,7 @@ import Clash.Class.Resize (resize)
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen, tbSystemClockGen)
-import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, unbundle, vName, vPeriod, vResetPolarity, Index)
+import Clash.Prelude (Bit, BitVector, CLog, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, addSNat, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, lengthS, mealy, register, repeat, replaceBit, replicate, resetGen, snatToNum, subSNat, unbundle, vName, vPeriod, vResetPolarity, Index, truncateB)
 import Clash.Prelude.BlockRam (trueDualPortBlockRam, RamOp(..))
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (!!), (++))
 import qualified Clash.Sized.Vector as Vector
@@ -67,7 +67,8 @@ parse :: BitVector 8 -> Feed
 parse 4 = Done
 parse 10 = NewLine
 parse x =
-  Char (fromIntegral (if x >= 97 then x - 97 else x - 65 + 26))
+  let y = fromIntegral x :: Unsigned 8
+  in Char (truncateB (if x >= 97 then y - 97 else y - 65 + 26))
 
 data StoreTState addr =
   StoreTState
