@@ -68,7 +68,7 @@ parse 4 = Done
 parse 10 = NewLine
 parse x =
   let y = fromIntegral x :: Unsigned 8
-  in Char (truncateB (if x >= 97 then y - 97 else y - 65 + 26))
+  in Char (truncateB (if y >= 97 then y - 97 else y - 65 + 26))
 
 data StoreTState addr =
   StoreTState
