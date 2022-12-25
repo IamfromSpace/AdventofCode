@@ -129,6 +129,13 @@ retrieveT s@RetrieveTState { rLinePointer = rlp, rCharPointer = rcp, charCount, 
       isLineDone = not isLeft && thisHalfDone
       rlp' = if isLineDone then (if rlp == maxBound then 0 else rlp + 1) else rlp
       rcp' = if rcp == maxBound then 0 else rcp + 1
+      -- NOTE: This makes up a giant muxer, which is really inefficient creates
+      -- our bottleneck.  It's possibly faster to write into yet _another_
+      -- block RAM, essentially using it as a very fast muxer.  The main issue
+      -- is that there's a lot of latency to then walk over the completed
+      -- BitVector (right?) as it's spread across 52 addresses, and we have to
+      -- zero out those address when we're done.  So this is a substantial
+      -- number of cycles.
       bvOut = replaceBit charEntry 1 bv
       bvStored = if thisHalfDone then 0 else bvOut
     in
