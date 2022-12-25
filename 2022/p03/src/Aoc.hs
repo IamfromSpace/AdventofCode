@@ -54,7 +54,7 @@ import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
 
-createDomain (knownVDomain @System){vName="AlchitryThird", vResetPolarity=ActiveLow, vPeriod=30000}
+createDomain (knownVDomain @System){vName="Alchitry8", vResetPolarity=ActiveLow, vPeriod=80000}
 
 data Feed
   = Done
@@ -246,10 +246,10 @@ runCore maybeByteSig =
   in
     out
 
-runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom (Maybe (Unsigned 64)) -> Signal dom Bit
+runOutputU64 :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 80000) => Signal dom (Maybe (Unsigned 64)) -> Signal dom Bit
 runOutputU64 =
   fst
-    . uartTx (SNat :: SNat 2083333)
+    . uartTx (SNat :: SNat 781250)
     . register Nothing
     . fmap (fmap bcdOrControlToAscii)
     . register Nothing
@@ -261,17 +261,17 @@ runOutputU64 =
     . register Nothing
     . mealy bcd64T Nothing
 
-run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom Bit -> Signal dom Bit
+run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 80000) => Signal dom Bit -> Signal dom Bit
 run =
   runOutputU64
     . register Nothing
     . runCore
     . register Nothing
-    . uartRx (SNat :: SNat 2083333)
+    . uartRx (SNat :: SNat 781250)
 
-topEntity :: Clock Alchitry -> Reset Alchitry -> Enable Alchitry -> Signal AlchitryThird Bit -> Signal AlchitryThird Bit
+topEntity :: Clock Alchitry -> Reset Alchitry -> Enable Alchitry -> Signal Alchitry8 Bit -> Signal Alchitry8 Bit
 topEntity clk rst _ input =
-  let (clk', _, _) = pllPadPrim 0 0 2 "SIMPLE" 1 "GENCLK" "FIXED" "FIXED" 0 0 0 clk (pure 0) (pure 1) (pure 0)
+  let (clk', _, _) = pllPadPrim 0 0 7 "SIMPLE" 1 "GENCLK" "FIXED" "FIXED" 0 0 0 clk (pure 0) (pure 1) (pure 0)
    in exposeClockResetEnable run clk' (convertReset clk clk' rst) enableGen input
 
 charToBit :: Char -> Int -> Bit
@@ -330,7 +330,7 @@ copyWavedrom =
       out = InOut <$> fmap (Maybe.fromMaybe 0) inputSignal <*> fmap (Maybe.fromMaybe 0) (exposeClockResetEnable runCore clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 200 "" out
 
-testBench :: Signal AlchitryThird Bool
+testBench :: Signal Alchitry8 Bool
 testBench =
   let en = enableGen
       clk = tbClockGen (not <$> done)
