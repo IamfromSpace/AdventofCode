@@ -109,6 +109,10 @@ oneContainsOther (Pair (Range a0 a1) (Range b0 b1)) =
   -- time and no routing.  This is almost certainly not the bottleneck!
   (a0 <= b0 && a1 >= b1) || (b0 <= a0 && b1 >= a1)
 
+hasOverlap :: Pair (Range (Vec 2 (Unsigned 4))) -> Bool
+hasOverlap x@(Pair (Range a0 a1) (Range b0 b1)) =
+  (a0 >= b0 && a0 <= b1) || (a1 >= b0 && a1 <= b1) || oneContainsOther x
+
 sumT :: Unsigned 64 -> (Bool, Unsigned 64) -> (Unsigned 64, Maybe (Unsigned 64))
 sumT acc (True, new) = (0, Just (acc + new))
 sumT acc (False, new) = (acc + new, Nothing)
@@ -210,7 +214,14 @@ runCore1 =
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore2 =
-  pure (pure (pure 0))
+  fmap join
+    . mealy (adapt sumT) 0
+    . register Nothing
+    . fmap (fmap (fmap (\x -> if x then 1 else 0)))
+    . fmap (fmap (fmap hasOverlap))
+    . register Nothing
+    . fmap join
+    . mealy (adapt parseT) (0, Parsed (repeat 0) (repeat 0))
 
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64, Unsigned 64))
 runCore maybeByteSig =
@@ -270,7 +281,7 @@ testOutput1 :: Vec _ Char
 testOutput1 = $(listToVecTH "2")
 
 testOutput2 :: Vec _ Char
-testOutput2 = $(listToVecTH "0")
+testOutput2 = $(listToVecTH "4")
 
 testInput :: Vec _ Bit
 testInput =
@@ -283,7 +294,7 @@ testInput =
 
 testInputCore :: Vec _ (Maybe (BitVector 8))
 testInputCore =
-  let raw = $(listToVecTH "5-15,12-13\n10-11,3-5\n1-5,1-5")
+  let raw = $(listToVecTH "5-15,12-13\n10-11,3-5\n1-5,1-5\n1-5,4-7")
    in ( (Nothing :> Nil)
           ++ fmap (Just . fromIntegral . ord) raw
           ++ (Just 4 :> Nothing :> Nil)
@@ -303,7 +314,7 @@ copyWavedrom =
       rst = resetGen :: Reset System
       inputSignal = stimuliGenerator clk rst testInputCore
       out = InOut <$> fmap BitsWave inputSignal <*> fmap ShowWave (exposeClockResetEnable runCore clk rst en inputSignal)
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 40 "" out
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 50 "" out
 
 testBench :: Signal Alchitry3 Bool
 testBench =
