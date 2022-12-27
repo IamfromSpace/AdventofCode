@@ -1,0 +1,145 @@
+name:                p05
+version:             0.1.0.0
+github:              "githubuser/p05"
+license:             BSD3
+author:              "Author name here"
+maintainer:          "example@example.com"
+copyright:           "2022 Author name here"
+
+description:         Solution for an Advent of Code challenge
+
+dependencies:
+  - base >= 4.7 && < 5
+  - bytestring
+  - clash-cores
+  - clash-prelude  >= 1.6.3 && < 1.8
+  - clash-utils
+  - clash-wavedrom
+  - containers
+  - cryptohash-md5
+  - deepseq
+  - ghc-typelits-natnormalise
+  - ghc-typelits-extra
+  - ghc-typelits-knownnat
+  - groups
+  - Hclip
+  - ice40-prim
+  - lens
+  - monad-loops
+  - mtl
+  - split
+  - text
+  - utf8-string
+
+default-extensions:
+  - Arrows
+  - BangPatterns
+  - BinaryLiterals
+  - ConstraintKinds
+  - DataKinds
+  - DefaultSignatures
+  - DeriveAnyClass
+  - DeriveDataTypeable
+  - DeriveFoldable
+  - DeriveFunctor
+  - DeriveGeneric
+  - DeriveLift
+  - DeriveTraversable
+  - DerivingStrategies
+  - EmptyCase
+  - InstanceSigs
+  - KindSignatures
+  - LambdaCase
+  - MultiParamTypeClasses
+  - NamedFieldPuns
+  - NoImplicitPrelude
+  - NoStarIsType
+  - OverloadedStrings
+  - OverloadedStrings
+  - PartialTypeSignatures
+  - PolyKinds
+  - QuasiQuotes
+  - RankNTypes
+  - ScopedTypeVariables
+  - StandaloneDeriving
+  - TemplateHaskell
+  - TupleSections
+  - TypeApplications
+  - TypeFamilies
+  - TypeOperators
+  - ViewPatterns
+
+ghc-options:
+  - -Wall
+  - -Wcompat
+  - -Wincomplete-record-updates
+  - -Wincomplete-uni-patterns
+  - -Wredundant-constraints
+  - -fno-warn-partial-type-signatures
+  - -fno-warn-name-shadowing
+  - -fwarn-tabs
+  - -fwarn-missing-signatures
+  - -fwarn-incomplete-patterns
+
+  # Plugins to support type-level constraint solving on naturals
+  - -fplugin GHC.TypeLits.Extra.Solver
+  - -fplugin GHC.TypeLits.Normalise
+  - -fplugin GHC.TypeLits.KnownNat.Solver
+
+  # Clash needs access to the source code in compiled modules
+  - -fexpose-all-unfoldings
+
+  # Worker wrappers introduce unstable names for functions that might have
+  # blackboxes attached for them. You can disable this, but be sure to add
+  # a no-specialize pragma to every function with a blackbox.
+  - -fno-worker-wrapper
+
+  # Strict annotations - while sometimes preventing space leaks - trigger
+  # optimizations Clash can't deal with. See:
+  #
+  #    https://github.com/clash-lang/clash-compiler/issues/2361
+  #
+  # These flags disables these optimizations. Note that the fields will
+  # remain strict.
+  - -fno-unbox-small-strict-fields
+  - -fno-unbox-strict-fields
+
+library:
+  source-dirs: src
+
+executables:
+  clash:
+    main:                bin/Clash.hs
+    source-dirs:         .
+    ghc-options:
+    - -dynamic
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - p05
+    - clash-ghc
+
+  clashi:
+    main:                bin/Clashi.hs
+    source-dirs:         .
+    ghc-options:
+    - -dynamic
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - p05
+    - clash-ghc
+
+tests:
+  p05-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - p05
+    - hspec
