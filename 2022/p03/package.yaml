@@ -78,7 +78,6 @@ ghc-options:
   - -fno-warn-partial-type-signatures
   - -fno-warn-name-shadowing
   - -fwarn-tabs
-  - -fno-warn-unused-imports
   - -fwarn-missing-signatures
   - -fwarn-incomplete-patterns
 
