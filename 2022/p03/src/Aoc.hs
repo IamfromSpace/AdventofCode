@@ -54,8 +54,6 @@ import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
 
-createDomain (knownVDomain @System){vName="AlchitryThird", vResetPolarity=ActiveLow, vPeriod=30000}
-
 bvHistT :: BitVector 8 -> BitVector 8 -> (BitVector 8, BitVector 8)
 bvHistT bv char =
   let x = unpack char :: Unsigned 8
@@ -76,19 +74,18 @@ adapt m b ta =
   let (bs, ta') = traverse (fmap (\(b, a) -> ([b], a)) $ m b) ta
    in (last (b : bs), ta')
 
-run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom Bit -> Signal dom Bit
+run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 10000) => Signal dom Bit -> Signal dom Bit
 run =
   fst
-    . uartTx (SNat :: SNat 2083333)
+    . uartTx (SNat :: SNat 6250000)
     . register Nothing
     . runCore
     . register Nothing
-    . uartRx (SNat :: SNat 2083333)
+    . uartRx (SNat :: SNat 6250000)
 
-topEntity :: Clock Alchitry -> Reset Alchitry -> Enable Alchitry -> Signal AlchitryThird Bit -> Signal AlchitryThird Bit
-topEntity clk rst _ input =
-  let (clk', _, _) = pllPadPrim 0 0 2 "SIMPLE" 1 "GENCLK" "FIXED" "FIXED" 0 0 0 clk (pure 0) (pure 1) (pure 0)
-   in exposeClockResetEnable run clk' (convertReset clk clk' rst) enableGen input
+topEntity :: Clock Alchitry -> Reset Alchitry -> Enable Alchitry -> Signal Alchitry Bit -> Signal Alchitry Bit
+topEntity =
+    exposeClockResetEnable run
 
 charToBit :: Char -> Int -> Bit
 charToBit char lsbIndex =
@@ -139,7 +136,7 @@ copyWavedrom =
       out = InOut <$> fmap (ShowWave . chr . fromIntegral . Maybe.fromMaybe 0) inputSignal <*> fmap (ShowWave . chr . fromIntegral . Maybe.fromMaybe 0) (exposeClockResetEnable runCore clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 20 "" out
 
-testBench :: Signal AlchitryThird Bool
+testBench :: Signal Alchitry Bool
 testBench =
   let en = enableGen
       clk = tbClockGen (not <$> done)
