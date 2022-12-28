@@ -55,9 +55,9 @@ createDomain (knownVDomain @System){vName="Alchitry3", vResetPolarity=ActiveLow,
 -- value at 1, but everything is correct.
 
 data Inst
-  = Add (Unsigned 3) (BitVector 8)
+  = Add (Unsigned 4) (BitVector 8)
   | InitialCratesDone
-  | Move (Unsigned 8) (Unsigned 3) (Unsigned 3)
+  | Move (Unsigned 8) (Unsigned 4) (Unsigned 4)
   | CrateMovesDone
   deriving stock (Generic, Eq, Show)
   deriving anyclass (NFData, NFDataX, ShowX)
@@ -75,13 +75,13 @@ data MoveParseProgress
   = PreCount
   | Count (Unsigned 8) -- TODO: May need to do this as BCD
   | PreFromId (Unsigned 8)
-  | PreToId (Unsigned 8) (Unsigned 3)
+  | PreToId (Unsigned 8) (Unsigned 4)
   | NeedNewLine
   deriving stock (Generic, Eq, Show)
   deriving anyclass (NFData, NFDataX, ShowX)
 
 data ParseProgress
-  = SPP (Unsigned 3) StackParseProgress
+  = SPP (Unsigned 4) StackParseProgress
   | NoMoreStacks
   | LineBreak
   | MPP MoveParseProgress
@@ -101,10 +101,9 @@ parseDigit 56 = Just 8
 parseDigit 57 = Just 9
 parseDigit _ = Nothing
 
-parseStackId :: BitVector 8 -> Maybe (Unsigned 3)
+parseStackId :: BitVector 8 -> Maybe (Unsigned 4)
 parseStackId x =
-  let mOneIndexed = parseDigit x :: Maybe (Unsigned 4)
-   in (\x -> truncateB (x - 1)) <$> mOneIndexed
+  (\x -> x - 1) <$> parseDigit x
 
 parseT :: ParseProgress -> BitVector 8 -> (ParseProgress, Maybe Inst)
 parseT (SPP n Waiting) 32 = (SPP n IsNotPresent, Nothing)
@@ -140,14 +139,14 @@ parseT (MPP NeedNewLine) 10 = (MPP PreCount, Nothing)
 parseT s x = error ("Unexpected input while parsing.\n" <> show s <> "\n" <> show x)
 
 data CraneState = CraneState
-  { pointers :: Vec 8 (Unsigned 8),
-    job :: Maybe (Unsigned 8, Unsigned 3, Unsigned 3),
+  { pointers :: Vec 9 (Unsigned 8),
+    job :: Maybe (Unsigned 8, Unsigned 4, Unsigned 4),
     isDone :: Bool
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (NFData, NFDataX, ShowX)
 
-craneMoveHelper :: CraneState -> Vec 8 (BitVector 8) -> (CraneState, (Maybe (Vec 8 (BitVector 8)), Vec 8 (Unsigned 8), Vec 8 (Maybe (Unsigned 8, BitVector 8))))
+craneMoveHelper :: CraneState -> Vec 9 (BitVector 8) -> (CraneState, (Maybe (Vec 9 (BitVector 8)), Vec 9 (Unsigned 8), Vec 9 (Maybe (Unsigned 8, BitVector 8))))
 craneMoveHelper s@CraneState {pointers, job, isDone} readValues =
   case job of
     Nothing ->
@@ -169,7 +168,7 @@ craneMoveHelper s@CraneState {pointers, job, isDone} readValues =
               }
        in (s', (Nothing, pointers', writeValues))
 
-craneT :: CraneState -> (Maybe Inst, Vec 8 (BitVector 8)) -> (CraneState, (Maybe (Vec 8 (BitVector 8)), Vec 8 (Unsigned 8), Vec 8 (Maybe (Unsigned 8, BitVector 8))))
+craneT :: CraneState -> (Maybe Inst, Vec 9 (BitVector 8)) -> (CraneState, (Maybe (Vec 9 (BitVector 8)), Vec 9 (Unsigned 8), Vec 9 (Maybe (Unsigned 8, BitVector 8))))
 craneT s (Just (Add n id), _) =
   let idx = pointers s !! n
       idx' = idx - 1
@@ -185,10 +184,10 @@ craneT s (Just CrateMovesDone, readValues) =
 craneT s (Nothing, readValues) =
   craneMoveHelper s readValues
 
-runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec 8 (BitVector 8)))
+runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec 9 (BitVector 8)))
 runCore1 mByteSig =
   let mParsed = join <$> mealy (adapt parseT) (SPP 0 Waiting) mByteSig
-      ramValues = bundle $ Vector.map (\i -> readNew (blockRamU NoClearOnReset (SNat :: SNat 256) undefined) (unbundle readAddrs !! i) (unbundle writes !! i)) $ Vector.iterate (SNat :: SNat 8) ((+) 1) (0 :: Unsigned 3)
+      ramValues = bundle $ Vector.map (\i -> readNew (blockRamU NoClearOnReset (SNat :: SNat 256) undefined) (unbundle readAddrs !! i) (unbundle writes !! i)) $ Vector.iterate (SNat :: SNat 9) ((+) 1) (0 :: Unsigned 4)
       (out, readAddrs, writes) = unbundle $ mealy craneT (CraneState (repeat 0) Nothing False) $ bundle (mParsed, ramValues)
    in out
 
@@ -196,7 +195,7 @@ runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Si
 runCore2 =
   pure (pure (pure 0))
 
-runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec 8 (BitVector 8), Unsigned 64))
+runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec 9 (BitVector 8), Unsigned 64))
 runCore maybeByteSig =
   let part1 = runCore1 maybeByteSig
       part2 = runCore2 maybeByteSig
@@ -208,7 +207,7 @@ run =
   fst
     . uartTx (SNat :: SNat 2083333)
     . register Nothing
-    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 10)) Nothing
+    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 11)) Nothing
     . register Nothing
     . fmap (fmap ((\x -> x ++ (10 :> 4 :> Nil)) . fst))
     . runCore
@@ -221,14 +220,14 @@ topEntity clk rst _ input =
    in exposeClockResetEnable run clk' (convertReset clk clk' rst) enableGen input
 
 testOutput1 :: Vec _ Char
-testOutput1 = $(listToVecTH "CMZAAAAA") -- Hove to cheat a bit
+testOutput1 = $(listToVecTH "CMZAAAAAA") -- Hove to cheat a bit
 
 testOutput2 :: Vec _ Char
 testOutput2 = $(listToVecTH "")
 
 testInput :: Vec _ Bit
 testInput =
-  let raw = $(listToVecTH "    [D]\n[N] [C]\n[Z] [M] [P] [A] [A] [A] [A] [A]\n 1   2   3\n\nmove 1 from 2 to 1\nmove 3 from 1 to 3\nmove 2 from 2 to 1\nmove 1 from 1 to 2\n")
+  let raw = $(listToVecTH "    [D]\n[N] [C]\n[Z] [M] [P] [A] [A] [A] [A] [A] [A]\n 1   2   3\n\nmove 1 from 2 to 1\nmove 3 from 1 to 3\nmove 2 from 2 to 1\nmove 1 from 1 to 2\n")
    in ( (1 :> 1 :> 1 :> 1 :> Nil)
           ++ Vector.concatMap charToUartRx raw
           ++ charToUartRx (chr 4)
@@ -269,7 +268,7 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 22087) 1
+          ( replicate (SNat :: SNat 22727) 1
               ++ Vector.concatMap charToUartRx testOutput1
               ++ charToUartRx '\n'
               ++ charToUartRx (chr 4)
