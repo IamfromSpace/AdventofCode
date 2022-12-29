@@ -142,6 +142,8 @@ type CM9000Job = (Unsigned 8, Unsigned 4, Unsigned 4)
 
 type DoJob a = Vec 9 (Unsigned 8) -> Vec 9 (BitVector 8) -> a -> (Vec 9 (Unsigned 8), Vec 9 (Maybe (Unsigned 8, BitVector 8)), Maybe a)
 
+type StartJob a = Unsigned 8 -> Unsigned 4 -> Unsigned 4 -> a
+
 data CraneState a = CraneState
   { pointers :: Vec 9 (Unsigned 8),
     job :: Maybe a,
@@ -150,7 +152,7 @@ data CraneState a = CraneState
   deriving stock (Generic, Eq, Show)
   deriving anyclass (NFData, NFDataX, ShowX)
 
-startCM9000Job :: Unsigned 8 -> Unsigned 4 -> Unsigned 4 -> (Unsigned 8, Unsigned 4, Unsigned 4)
+startCM9000Job :: Unsigned 8 -> Unsigned 4 -> Unsigned 4 -> CM9000Job
 startCM9000Job = (,,)
 
 doCM9000Job :: DoJob CM9000Job
@@ -160,6 +162,33 @@ doCM9000Job pointers readValues (count, from, to) =
       pointers' = Vector.replace from fromPointer' $ Vector.replace to toPointer' pointers
       writeValues = Vector.replace to (Just (toPointer', readValues !! from)) $ repeat Nothing
    in (pointers', writeValues, if count == 1 then Nothing else Just (count - 1, from, to))
+
+data CM9001Job
+  = Moving (Unsigned 8) (Unsigned 8) (Unsigned 4) (Unsigned 4)
+  | Syncing (Unsigned 8) (Unsigned 4)
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+startCM9001Job :: Unsigned 8 -> Unsigned 4 -> Unsigned 4 -> CM9001Job
+startCM9001Job count = Moving count count
+
+doCM9001Job :: DoJob CM9001Job
+doCM9001Job pointers _ (Syncing originalCount to) =
+  -- Need to resync the pointer at the top of the stack
+  -- TODO: This whole thing can be simplified, because we only need to move
+  -- the 'to' _read_ pointer once!
+  let pointers' = Vector.replace to ((pointers !! to) + originalCount - 1) pointers
+   in (pointers', repeat Nothing, Nothing)
+doCM9001Job pointers readValues (Moving originalCount remainingCount from to) =
+  let fromPointer' = (pointers !! from) - 1
+      toPointer' = if originalCount == remainingCount then (pointers !! to) + originalCount else (pointers !! to) - 1
+      pointers' = Vector.replace from fromPointer' $ Vector.replace to toPointer' pointers
+      writeValues = Vector.replace to (Just (toPointer', readValues !! from)) $ repeat Nothing
+      job' =
+        if remainingCount == 1
+          then Just (Syncing originalCount to)
+          else Just (Moving originalCount (remainingCount - 1) from to)
+   in (pointers', writeValues, job')
 
 craneMoveHelper :: DoJob a -> CraneState a -> Vec 9 (BitVector 8) -> (CraneState a, (Maybe (Vec 9 (BitVector 8)), Vec 9 (Unsigned 8), Vec 9 (Maybe (Unsigned 8, BitVector 8))))
 craneMoveHelper doJob s@CraneState {pointers, job, isDone} readValues =
@@ -193,15 +222,19 @@ craneT _ doJob s (Just CrateMovesDone, readValues) =
 craneT _ doJob s (Nothing, readValues) =
   craneMoveHelper doJob s readValues
 
-runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe Inst) -> Signal dom (Maybe (Vec 9 (BitVector 8)))
-runCore1 mParsed =
+runCore' :: NFDataX a => HiddenClockResetEnable dom => StartJob a -> DoJob a -> Signal dom (Maybe Inst) -> Signal dom (Maybe (Vec 9 (BitVector 8)))
+runCore' startJob doJob mParsed =
   let ramValues = bundle $ Vector.map (\i -> readNew (blockRamU NoClearOnReset (SNat :: SNat 256) undefined) (unbundle readAddrs !! i) (unbundle writes !! i)) $ Vector.iterate (SNat :: SNat 9) ((+) 1) (0 :: Unsigned 4)
-      (out, readAddrs, writes) = unbundle $ mealy (craneT startCM9000Job doCM9000Job) (CraneState (repeat 0) Nothing False) $ bundle (mParsed, ramValues)
+      (out, readAddrs, writes) = unbundle $ mealy (craneT startJob doJob) (CraneState (repeat 0) Nothing False) $ bundle (mParsed, ramValues)
    in out
+
+runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe Inst) -> Signal dom (Maybe (Vec 9 (BitVector 8)))
+runCore1 =
+  runCore' startCM9000Job doCM9000Job
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe Inst) -> Signal dom (Maybe (Vec 9 (BitVector 8)))
 runCore2 =
-  pure (pure (pure (fmap (truncateB . pack . ord) ('M' :> 'C' :> 'D' :> 'A' :> 'A' :> 'A' :> 'A' :> 'A' :> 'A' :> Nil))))
+  runCore' startCM9001Job doCM9001Job
 
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec 9 (BitVector 8), Vec 9 (BitVector 8)))
 runCore mByteSig =
