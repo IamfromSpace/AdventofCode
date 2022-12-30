@@ -1,0 +1,128 @@
+{-# LANGUAGE FlexibleContexts #-}
+
+module Aoc where
+
+import Clash.Cores.UART (uartRx, uartTx)
+import Clash.Explicit.Reset (convertReset)
+import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
+import Clash.Prelude (Bit, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, register, replicate, resetGen, vName, vPeriod, vResetPolarity)
+import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
+import qualified Clash.Sized.Vector as Vector
+import Clash.WaveDrom (BitsWave (BitsWave), ShowWave (ShowWave), ToWave, render, wavedromWithClock)
+import Clash.XException (NFDataX, ShowX)
+import Control.DeepSeq (NFData)
+import Data.ByteString.UTF8 ()
+import Data.Char (chr, ord)
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TLE
+import GHC.Generics (Generic)
+import Ice40.Pll.Pad (pllPadPrim)
+import System.Hclip (setClipboard)
+import Util (awaitBothT, charToUartRx, delayBufferVecT)
+import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
+
+createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
+
+createDomain (knownVDomain @System){vName="Alchitry3", vResetPolarity=ActiveLow, vPeriod=30000}
+
+-- part 1: A naive approach would have us buffer four items, and then
+-- combinatonally compare everything.  This yields O(n^2) comparisons.
+-- However, we can instead buffer the items _and_ the number of distinct items
+-- behind it.  So each current item shifts and increments if a) all previous
+-- items were distinct b) it's distinct from the current item.  We feed out the
+-- oldest value and it's distinction count.  This is then fed into a new
+-- accumulator that counts when it sees at least 3, then at least 2, then at
+-- least 1.  This only does O(n) comparisons.
+
+runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe ()) -> Signal dom (Maybe (Vec 0 (BitVector 8)))
+runCore1 =
+  pure (pure (pure Nil))
+
+runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe ()) -> Signal dom (Maybe (Vec 0 (BitVector 8)))
+runCore2 =
+  pure (pure (pure Nil))
+
+runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec 0 (BitVector 8), Vec 0 (BitVector 8)))
+runCore mByteSig =
+  let mParsed = fmap (fmap (const ())) mByteSig
+      part1 = runCore1 mParsed
+      part2 = runCore2 mParsed
+      out = mealy awaitBothT (Nothing, Nothing) (bundle (part1, part2))
+   in out
+
+run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom Bit -> Signal dom Bit
+run =
+  fst
+    . uartTx (SNat :: SNat 2083333)
+    . register Nothing
+    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 3)) Nothing
+    . register Nothing
+    . fmap (fmap (\(a, b) -> a ++ (10 :> Nil) ++ b ++ (10 :> 4 :> Nil)))
+    . runCore
+    . register Nothing
+    . uartRx (SNat :: SNat 2083333)
+
+topEntity :: Clock Alchitry -> Reset Alchitry -> Enable Alchitry -> Signal Alchitry3 Bit -> Signal Alchitry3 Bit
+topEntity clk rst _ input =
+  let (clk', _, _) = pllPadPrim 0 0 2 "SIMPLE" 1 "GENCLK" "FIXED" "FIXED" 0 0 0 clk (pure 0) (pure 1) (pure 0)
+   in exposeClockResetEnable run clk' (convertReset clk clk' rst) enableGen input
+
+testOutput1 :: Vec _ Char
+testOutput1 = $(listToVecTH "")
+
+testOutput2 :: Vec _ Char
+testOutput2 = $(listToVecTH "")
+
+testInput :: Vec _ Bit
+testInput =
+  let raw = $(listToVecTH "")
+   in ( (1 :> 1 :> 1 :> 1 :> Nil)
+          ++ Vector.concatMap charToUartRx raw
+          ++ charToUartRx (chr 4)
+          ++ (1 :> Nil)
+      )
+
+testInputCore :: Vec _ (Maybe (BitVector 8))
+testInputCore =
+  let raw = $(listToVecTH "")
+   in ( (Nothing :> Nil)
+          ++ fmap (Just . fromIntegral . ord) raw
+          ++ (Just 4 :> Nothing :> Nil)
+      )
+
+data InOut a b = InOut
+  { input :: a,
+    output :: b
+  }
+  deriving stock (Generic, Eq)
+  deriving anyclass (NFData, NFDataX, ShowX, ToWave)
+
+copyWavedrom :: IO ()
+copyWavedrom =
+  let en = enableGen
+      clk = tbClockGen (False <$ out)
+      rst = resetGen :: Reset System
+      inputSignal = stimuliGenerator clk rst testInputCore
+      out = InOut <$> fmap BitsWave inputSignal <*> fmap ShowWave (exposeClockResetEnable runCore clk rst en inputSignal)
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
+
+testBench :: Signal Alchitry3 Bool
+testBench =
+  let en = enableGen
+      clk = tbClockGen (not <$> done)
+      rst = resetGen
+      inputSignal = stimuliGenerator clk rst testInput
+      expectOutput =
+        outputVerifier'
+          clk
+          rst
+          ( replicate (SNat :: SNat 0) 1
+              ++ Vector.concatMap charToUartRx testOutput1
+              ++ charToUartRx '\n'
+              ++ Vector.concatMap charToUartRx testOutput2
+              ++ charToUartRx '\n'
+              ++ charToUartRx (chr 4)
+              ++ (1 :> Nil)
+          )
+      done = expectOutput (exposeClockResetEnable run clk rst en inputSignal)
+   in done
