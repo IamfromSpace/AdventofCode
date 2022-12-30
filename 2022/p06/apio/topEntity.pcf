@@ -1,6 +1,6 @@
 set_io clk P7
 set_io rst P8
-set_io ds A12
+set_io ds1 A12
 set_io input1 P14
 set_io result M9
 

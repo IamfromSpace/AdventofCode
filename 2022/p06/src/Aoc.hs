@@ -6,7 +6,7 @@ import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
 import Clash.Prelude (Bit, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, register, replicate, resetGen, vName, vPeriod, vResetPolarity)
-import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
+import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++), (!!))
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (BitsWave (BitsWave), ShowWave (ShowWave), ToWave, render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
@@ -35,23 +35,13 @@ createDomain (knownVDomain @System){vName="Alchitry3", vResetPolarity=ActiveLow,
 -- accumulator that counts when it sees at least 3, then at least 2, then at
 -- least 1.  This only does O(n) comparisons.
 
-data ThreeBufferState
-  = Zero
-  | One (BitVector 8)
-  | Two (BitVector 8) (BitVector 8, Unsigned 2)
-  | Three (BitVector 8) (BitVector 8, Unsigned 2) (BitVector 8, Unsigned 2)
-  deriving stock (Generic, Eq, Show)
-  deriving anyclass (NFData, NFDataX, ShowX)
-
-distinct3T :: ThreeBufferState -> BitVector 8 -> (ThreeBufferState, Maybe (BitVector 8, Unsigned 2))
-distinct3T (Three b (c, cn) (d, dn)) a =
-  (Three a (b, if a /= b then 1 else 0) (c, if cn == 1 && c /= a then 2 else cn), Just (d, if dn == 2 && d /= a then 3 else dn))
-distinct3T (Two b (c, cn)) a =
-  (Three a (b, if a /= b then 1 else 0) (c, if cn == 1 && c /= a then 2 else cn), Nothing)
-distinct3T (One b) a =
-  (Two a (b, if a /= b then 1 else 0), Nothing)
-distinct3T Zero a =
-  (One a, Nothing)
+distinct3T :: Vec 3 (Maybe (BitVector 8, Unsigned 2)) -> BitVector 8 -> (Vec 3 (Maybe (BitVector 8, Unsigned 2)), Maybe (BitVector 8, Unsigned 2))
+distinct3T buffer new =
+  let
+    withNewCounts = Vector.imap (\i -> fmap (\(x, xn) -> (x, if x /= new && xn == fromIntegral i then xn + 1 else xn))) buffer
+    (newBuffer, out) = Vector.shiftInAt0 withNewCounts (Just (new, 0) :> Nil)
+  in
+    (newBuffer, out !! 0)
 
 data Distinct
   = D0
@@ -78,7 +68,7 @@ detectorT (Just (n, D2)) (Just (_, d)) =
 
 runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore1 =
-  mealy detectorT (Just (0, D0)) . fmap join . mealy (adapt distinct3T) Zero
+  mealy detectorT (Just (0, D0)) . fmap join . mealy (adapt distinct3T) (Vector.repeat Nothing)
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe ()) -> Signal dom (Maybe (Unsigned 64))
 runCore2 =
