@@ -43,32 +43,27 @@ distinct3T buffer new =
   in
     (newBuffer, out !! 0)
 
-data Distinct
-  = D0
-  | D1
-  | D2
-  deriving stock (Generic, Eq, Show)
-  deriving anyclass (NFData, NFDataX, ShowX)
-
 -- TODO: We do need to detect the end so that we can flush the buffer
-detectorT :: Maybe (Unsigned 64, Distinct) -> Maybe (BitVector 8, Unsigned 2) -> (Maybe (Unsigned 64, Distinct), Maybe (Unsigned 64))
+detectorT :: Maybe (Unsigned 64, Unsigned 2) -> Maybe (BitVector 8, Unsigned 2) -> (Maybe (Unsigned 64, Unsigned 2), Maybe (Unsigned 64))
 detectorT Nothing _ =
   -- Dormant once finished
   (Nothing, Nothing)
 detectorT s Nothing = (s, Nothing)
-detectorT (Just (n, D0)) (Just (_, d)) = (Just (n + 1, if d == 3 then D1 else D0), Nothing)
-detectorT (Just (n, D1)) (Just (_, d)) = (Just (n + 1, if d >= 2 then D2 else D0), Nothing)
-detectorT (Just (n, D2)) (Just (_, d)) =
-  if d >= 1
-    then -- We detect one early (we don't have to see the four one, we know it's
-    -- distinct, and we're zero indexed, so we add 2 to account for these
-    -- factors.
+detectorT (Just (n, distinctCharCount)) (Just (_, next)) =
+  let
+    distinctCharCount' = if next >= 3 - distinctCharCount then distinctCharCount + 1 else 0
+  in
+    if distinctCharCount' == 3 then
+      -- We detect one early (we don't have to see the four one, we know it's
+      -- distinct, and we're zero indexed, so we add 2 to account for these
+      -- factors.
       (Nothing, Just (n + 2))
-    else (Just (n + 1, D0), Nothing)
+    else
+      (Just (n + 1, distinctCharCount'), Nothing)
 
 runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore1 =
-  mealy detectorT (Just (0, D0)) . fmap join . mealy (adapt distinct3T) (Vector.repeat Nothing)
+  mealy detectorT (Just (0, 0)) . fmap join . mealy (adapt distinct3T) (Vector.repeat Nothing)
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe ()) -> Signal dom (Maybe (Unsigned 64))
 runCore2 =
