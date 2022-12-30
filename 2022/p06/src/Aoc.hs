@@ -5,8 +5,8 @@ module Aoc where
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
-import Clash.Prelude (Bit, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, register, replicate, resetGen, vName, vPeriod, vResetPolarity)
-import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++), (!!))
+import Clash.Prelude (Bit, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, register, replicate, resetGen, vName, vPeriod, vResetPolarity, Index, KnownNat)
+import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (BitsWave (BitsWave), ShowWave (ShowWave), ToWave, render, wavedromWithClock)
 import Clash.XException (NFDataX, ShowX)
@@ -17,6 +17,7 @@ import Data.Char (chr, ord)
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
+import GHC.TypeNats (type (+))
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
 import Util (BcdOrControl (..), awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
@@ -41,40 +42,40 @@ data DistinctStatus
   deriving stock (Generic, Eq, Show, Ord)
   deriving anyclass (NFData, NFDataX, ShowX)
 
-data DistinctState = DistinctState
+data DistinctState n m = DistinctState
   { status :: DistinctStatus
-  , buffer :: Vec 3 (Maybe (BitVector 8, Unsigned 2))
+  , buffer :: Vec n (Maybe (BitVector 8, Index m))
   }
   deriving stock (Generic, Eq, Show, Ord)
   deriving anyclass (NFData, NFDataX, ShowX)
 
-distinct3T :: DistinctState -> Maybe (BitVector 8) -> (DistinctState, Maybe (BitVector 8, Unsigned 2))
-distinct3T s@DistinctState { status = Running } Nothing =
+distinctNT :: KnownNat n => DistinctState n (n + 1) -> Maybe (BitVector 8) -> (DistinctState n (n + 1), Maybe (BitVector 8, Index (n + 1)))
+distinctNT s@DistinctState { status = Running } Nothing =
   (s, Nothing)
-distinct3T s@DistinctState { status = Running } (Just 4) =
+distinctNT s@DistinctState { status = Running } (Just 4) =
   (s { status = Flushing }, Nothing)
-distinct3T s@DistinctState { status = Running, buffer } (Just new) =
+distinctNT s@DistinctState { status = Running, buffer } (Just new) =
   let
     withNewCounts = Vector.imap (\i -> fmap (\(x, xn) -> (x, if x /= new && xn == fromIntegral i then xn + 1 else xn))) buffer
     (newBuffer, out) = Vector.shiftInAt0 withNewCounts (Just (new, 0) :> Nil)
   in
-    (s { buffer = newBuffer }, out !! 0)
-distinct3T s@DistinctState { status = Flushing, buffer } _ =
+    (s { buffer = newBuffer }, Vector.head out)
+distinctNT s@DistinctState { status = Flushing, buffer } _ =
   let
     (newBuffer, out) = Vector.shiftInAt0 buffer (Nothing :> Nil)
   in
-    (s { buffer = newBuffer }, out !! 0)
+    (s { buffer = newBuffer }, Vector.head out)
 
-detectorT :: Maybe (Unsigned 64, Unsigned 2) -> Maybe (BitVector 8, Unsigned 2) -> (Maybe (Unsigned 64, Unsigned 2), Maybe (Unsigned 64))
+detectorT :: KnownNat n => Maybe (Unsigned 64, Index n) -> Maybe (BitVector 8, Index n) -> (Maybe (Unsigned 64, Index n), Maybe (Unsigned 64))
 detectorT Nothing _ =
   -- Dormant once finished
   (Nothing, Nothing)
 detectorT s Nothing = (s, Nothing)
 detectorT (Just (n, distinctCharCount)) (Just (_, next)) =
   let
-    distinctCharCount' = if next >= 3 - distinctCharCount then distinctCharCount + 1 else 0
+    distinctCharCount' = if next >= maxBound - distinctCharCount then distinctCharCount + 1 else 0
   in
-    if distinctCharCount' == 3 then
+    if distinctCharCount' == maxBound then
       -- We detect one early (we don't have to see the four one, we know it's
       -- distinct, and we're zero indexed, so we add 2 to account for these
       -- factors.
@@ -84,17 +85,17 @@ detectorT (Just (n, distinctCharCount)) (Just (_, next)) =
 
 runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore1 =
-  mealy detectorT (Just (0, 0)) . mealy distinct3T (DistinctState Running (Vector.repeat Nothing))
+  mealy detectorT (Just (0, 0)) . mealy distinctNT (DistinctState Running (Vector.replicate (SNat :: SNat 3) Nothing))
 
-runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe ()) -> Signal dom (Maybe (Unsigned 64))
+runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore2 =
-  pure (pure (pure 0))
+  mealy detectorT (Just (0, 0)) . mealy distinctNT (DistinctState Running (Vector.replicate (SNat :: SNat 13) Nothing))
+
 
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64, Unsigned 64))
 runCore mByteSig =
-  let mParsed = fmap (fmap (const ())) mByteSig
-      part1 = runCore1 mByteSig
-      part2 = runCore2 mParsed
+  let part1 = runCore1 mByteSig
+      part2 = runCore2 mByteSig
       out = mealy awaitBothT (Nothing, Nothing) (bundle (part1, part2))
    in out
 
@@ -125,7 +126,7 @@ testOutput1 :: Vec _ Char
 testOutput1 = $(listToVecTH "10")
 
 testOutput2 :: Vec _ Char
-testOutput2 = $(listToVecTH "0")
+testOutput2 = $(listToVecTH "29")
 
 testInput :: Vec _ Bit
 testInput =
@@ -138,7 +139,7 @@ testInput =
 
 testInputCore :: Vec _ (Maybe (BitVector 8))
 testInputCore =
-  let raw = $(listToVecTH "zcfzfwzzqfr")
+  let raw = $(listToVecTH "zcfzfwzzqfraaaaabcdefghijklmn")
    in ( (Nothing :> Nil)
           ++ fmap (Just . fromIntegral . ord) raw
           ++ (Just 4 :> Nothing :> Nil)
@@ -170,11 +171,11 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 2154) 1
+          ( replicate (SNat :: SNat 5682) 1
               ++ replicate (SNat :: SNat 2880) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput1
               ++ charToUartRx '\n'
-              ++ replicate (SNat :: SNat 3040) 1 -- blank leading zeros
+              ++ replicate (SNat :: SNat 2880) 1 -- blank leading zeros
               ++ Vector.concatMap charToUartRx testOutput2
               ++ charToUartRx '\n'
               ++ charToUartRx (chr 4)
