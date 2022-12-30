@@ -2,7 +2,11 @@
 
 module Util where
 
-import Clash.Prelude (Bit, CLog, Char, Int, KnownNat, Maybe (..), SNat (..), Traversable (..), Unsigned, Vec, fmap, fromIntegral, replicate, snatToNum, subSNat, (!), (!!), ($), (&&), (+), (++), (<|>), (==))
+import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
+import Clash.Prelude (Bit, BitVector, CLog, Char, Eq, Generic, Int, KnownNat, Maybe (..), Ord, SNat (..), Show, Traversable (..), Unsigned, Vec, fmap, fromIntegral, pack, repeat, replicate, snatToNum, subSNat, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<|>), (==))
+import qualified Clash.Sized.Vector as Vector
+import Clash.XException (NFDataX, ShowX)
+import Control.DeepSeq (NFData)
 import Data.Char (ord)
 import qualified Data.List as List
 import GHC.TypeNats (type (+))
@@ -72,3 +76,44 @@ charToUartRx char =
     ++ replicate (SNat :: SNat 16) (charToBit char 6)
     ++ replicate (SNat :: SNat 16) (charToBit char 7)
     ++ replicate (SNat :: SNat 16) 1
+
+bcd64T ::
+  Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
+  Maybe (Unsigned 64, Unsigned 64) ->
+  ( Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)),
+    Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4))
+  )
+bcd64T Nothing Nothing =
+  -- Nothing in progress, no new values to convert
+  (Nothing, Nothing)
+bcd64T Nothing (Just (a, b)) =
+  -- New values to convert
+  (Just (a, b, 63, repeat 0, repeat 0), Nothing)
+bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
+  -- Convert values in progress
+  let aBcd' = convertStep (a ! n) aBcd
+      bBcd' = convertStep (b ! n) bBcd
+      done = n == 0
+   in if done
+        then (Nothing, Just (aBcd', bBcd'))
+        else (Just (a, b, n - 1, aBcd', bBcd'), Nothing)
+
+data BcdOrControl
+  = Bcd (Unsigned 4)
+  | Return
+  | Eot
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+blankLeadingZeros :: KnownNat n => Vec n (Unsigned 4) -> Vec n (Maybe BcdOrControl)
+blankLeadingZeros v =
+  case Vector.findIndex ((/=) 0) v of
+    Nothing -> Vector.replace (Vector.length v - 1) (Just (Bcd 0)) $ repeat Nothing
+    Just i -> Vector.imap (\i' x -> if i' < i then Nothing else Just (Bcd x)) v
+
+bcdOrControlToAscii :: BcdOrControl -> BitVector 8
+bcdOrControlToAscii x =
+  case x of
+    Bcd bcd -> bcdToAscii $ pack bcd
+    Return -> 10
+    Eot -> 4
