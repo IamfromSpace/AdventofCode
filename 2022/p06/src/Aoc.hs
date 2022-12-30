@@ -19,7 +19,7 @@ import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
-import Util (BcdOrControl (..), adapt, awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
+import Util (BcdOrControl (..), awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
@@ -35,15 +35,36 @@ createDomain (knownVDomain @System){vName="Alchitry3", vResetPolarity=ActiveLow,
 -- accumulator that counts when it sees at least 3, then at least 2, then at
 -- least 1.  This only does O(n) comparisons.
 
-distinct3T :: Vec 3 (Maybe (BitVector 8, Unsigned 2)) -> BitVector 8 -> (Vec 3 (Maybe (BitVector 8, Unsigned 2)), Maybe (BitVector 8, Unsigned 2))
-distinct3T buffer new =
+data DistinctStatus
+  = Running
+  | Flushing
+  deriving stock (Generic, Eq, Show, Ord)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+data DistinctState = DistinctState
+  { status :: DistinctStatus
+  , buffer :: Vec 3 (Maybe (BitVector 8, Unsigned 2))
+  }
+  deriving stock (Generic, Eq, Show, Ord)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+distinct3T :: DistinctState -> Maybe (BitVector 8) -> (DistinctState, Maybe (BitVector 8, Unsigned 2))
+distinct3T s@DistinctState { status = Running } Nothing =
+  (s, Nothing)
+distinct3T s@DistinctState { status = Running } (Just 4) =
+  (s { status = Flushing }, Nothing)
+distinct3T s@DistinctState { status = Running, buffer } (Just new) =
   let
     withNewCounts = Vector.imap (\i -> fmap (\(x, xn) -> (x, if x /= new && xn == fromIntegral i then xn + 1 else xn))) buffer
     (newBuffer, out) = Vector.shiftInAt0 withNewCounts (Just (new, 0) :> Nil)
   in
-    (newBuffer, out !! 0)
+    (s { buffer = newBuffer }, out !! 0)
+distinct3T s@DistinctState { status = Flushing, buffer } _ =
+  let
+    (newBuffer, out) = Vector.shiftInAt0 buffer (Nothing :> Nil)
+  in
+    (s { buffer = newBuffer }, out !! 0)
 
--- TODO: We do need to detect the end so that we can flush the buffer
 detectorT :: Maybe (Unsigned 64, Unsigned 2) -> Maybe (BitVector 8, Unsigned 2) -> (Maybe (Unsigned 64, Unsigned 2), Maybe (Unsigned 64))
 detectorT Nothing _ =
   -- Dormant once finished
@@ -63,7 +84,7 @@ detectorT (Just (n, distinctCharCount)) (Just (_, next)) =
 
 runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore1 =
-  mealy detectorT (Just (0, 0)) . fmap join . mealy (adapt distinct3T) (Vector.repeat Nothing)
+  mealy detectorT (Just (0, 0)) . mealy distinct3T (DistinctState Running (Vector.repeat Nothing))
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe ()) -> Signal dom (Maybe (Unsigned 64))
 runCore2 =
@@ -117,7 +138,7 @@ testInput =
 
 testInputCore :: Vec _ (Maybe (BitVector 8))
 testInputCore =
-  let raw = $(listToVecTH "zcfzfwzzqfrljwzlrfnpqdbhtmscgvjw")
+  let raw = $(listToVecTH "zcfzfwzzqfr")
    in ( (Nothing :> Nil)
           ++ fmap (Just . fromIntegral . ord) raw
           ++ (Just 4 :> Nothing :> Nil)
