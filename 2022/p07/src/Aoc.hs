@@ -114,12 +114,69 @@ sumT :: Mealy (Unsigned 64) (MoreOrDone (Unsigned 64)) (Maybe (Unsigned 64))
 sumT acc (More new) = (acc + new, Nothing)
 sumT acc Done = (0, Just acc)
 
-runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (MoreOrDone Event)) -> Signal dom (Maybe (Unsigned 64))
-runCore1 mEventSig =
-  let (mWrite, readAddr, allDirs) =
+data ChooseDirMode
+  = Ingesting (Unsigned 64) -- Final/largest (one implies the other)
+  | Selecting
+      (Unsigned 64) -- Space needed
+      (Unsigned 64) -- Best candidate's size
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+data ChooseDirState n = ChooseDirState
+  { mode :: ChooseDirMode,
+    pointer :: Index n
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+chooseDirT ::
+  KnownNat n =>
+  Mealy
+    (ChooseDirState n)
+    (Maybe (MoreOrDone (Unsigned 64)), Unsigned 64)
+    (Maybe (Unsigned 64), Index n, Maybe (Index n, Unsigned 64))
+chooseDirT s@ChooseDirState {mode = Ingesting _, pointer} (Nothing, _) =
+  (s, (Nothing, pointer, Nothing))
+chooseDirT s@ChooseDirState {mode = Ingesting largestDirSeen, pointer} (Just Done, _) =
+  (s {mode = Selecting (largestDirSeen - 40000000) maxBound}, (Nothing, pointer, Nothing))
+chooseDirT s@ChooseDirState {mode = Ingesting _, pointer} (Just (More newerSize), _) =
+  let pointer' = pointer + 1
+   in ( s
+          { mode = Ingesting newerSize,
+            pointer = pointer'
+          },
+        (Nothing, pointer', Just (pointer', newerSize))
+      )
+chooseDirT s@ChooseDirState {mode = Selecting spaceNeeded currCandidateSize, pointer} (_, altCandidateSize) =
+  let currCandidateSize' =
+        if altCandidateSize >= spaceNeeded
+          && altCandidateSize < currCandidateSize
+          then altCandidateSize
+          else currCandidateSize
+      pointer' = pointer - 1
+   in if pointer' == 0
+        then
+          ( ChooseDirState (Ingesting 0) 0,
+            (Just currCandidateSize', 0, Nothing)
+          )
+        else
+          ( s
+              { mode = Selecting spaceNeeded currCandidateSize',
+                pointer = pointer'
+              },
+            (Nothing, pointer', Nothing)
+          )
+
+emitAllDirs :: HiddenClockResetEnable dom => Signal dom (Maybe (MoreOrDone Event)) -> Signal dom (Maybe (MoreOrDone (Unsigned 64)))
+emitAllDirs mEventSig =
+  let (mWrite, readAddr, out) =
         unbundle $ mealy traverseT (0 :: Index 256, 0) (bundle (mEventSig, ramOut))
       ramOut = readNew (blockRamU NoClearOnReset (SNat :: SNat 256) undefined) readAddr mWrite
-      filteredDirs =
+   in out
+
+sumDirsAtMost100000 :: HiddenClockResetEnable dom => Signal dom (Maybe (MoreOrDone (Unsigned 64))) -> Signal dom (Maybe (Unsigned 64))
+sumDirsAtMost100000 allDirs =
+  let filteredDirs =
         (=<<)
           ( \case
               More x -> if x > 100000 then Nothing else Just (More x)
@@ -129,16 +186,25 @@ runCore1 mEventSig =
       out = join <$> mealy (adapt sumT) 0 filteredDirs
    in out
 
-runCore2 :: HiddenClockResetEnable dom => Signal dom () -> Signal dom (Maybe (Unsigned 64))
-runCore2 =
-  pure (pure (pure 0))
+chooseDir :: HiddenClockResetEnable dom => Signal dom (Maybe (MoreOrDone (Unsigned 64))) -> Signal dom (Maybe (Unsigned 64))
+chooseDir mEventSig =
+  let (out, readAddr, mWrite) =
+        unbundle $ mealy chooseDirT (ChooseDirState (Ingesting 0) (0 :: Index 256)) (bundle (mEventSig, ramOut))
+      ramOut = readNew (blockRamU NoClearOnReset (SNat :: SNat 256) undefined) readAddr mWrite
+   in out
+
+-- Now just used for testing
+runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (MoreOrDone Event)) -> Signal dom (Maybe (Unsigned 64))
+runCore1 =
+  sumDirsAtMost100000 . emitAllDirs
 
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64, Unsigned 64))
 runCore mByteSig =
   let parsed = join <$> mealy (adapt parseT) StartOfLine mByteSig
       helpedParsed = mealy popHelperT (Running, 0) parsed
-      part1 = runCore1 helpedParsed
-      part2 = runCore2 (pure ())
+      allDirs = emitAllDirs helpedParsed
+      part1 = sumDirsAtMost100000 allDirs
+      part2 = chooseDir allDirs
       out = mealy awaitBothT (Nothing, Nothing) (bundle (part1, part2))
    in out
 
@@ -169,7 +235,7 @@ testOutput1 :: Vec _ Char
 testOutput1 = $(listToVecTH "95437")
 
 testOutput2 :: Vec _ Char
-testOutput2 = $(listToVecTH "0")
+testOutput2 = $(listToVecTH "24933642")
 
 testInput :: Vec _ Bit
 testInput =
@@ -182,7 +248,7 @@ testInput =
 
 testInputCore :: Vec _ (Maybe (BitVector 8))
 testInputCore =
-  let raw = $(listToVecTH "$ cd /\ndir a\n123 x\n$ cd a\ndir b\n456 y\n$ cd ..")
+  let raw = $(listToVecTH "$ cd /\ndir a\n40000000 x\n$ cd a\ndir b\n456 y\n$ cd ..")
    in ( (Nothing :> Nil)
           ++ fmap (Just . fromIntegral . ord) raw
           ++ (Just 4 :> Nothing :> Nil)
@@ -223,11 +289,11 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 30957) 1
+          ( replicate (SNat :: SNat 30961) 1
               ++ replicate (SNat :: SNat 2400) 1
               ++ Vector.concatMap charToUartRx testOutput1
               ++ charToUartRx '\n'
-              ++ replicate (SNat :: SNat 3040) 1
+              ++ replicate (SNat :: SNat 1920) 1
               ++ Vector.concatMap charToUartRx testOutput2
               ++ charToUartRx '\n'
               ++ charToUartRx (chr 4)
