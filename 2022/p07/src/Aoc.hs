@@ -20,7 +20,7 @@ import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
-import Util (BcdOrControl (..), Mealy, awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
+import Util (BcdOrControl (..), Mealy, adapt, awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
@@ -39,32 +39,94 @@ data Event
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (NFData, NFDataX, ShowX)
 
-fakeParse :: BitVector 8 -> Event
-fakeParse 111 = Pop
-fakeParse 117 = Push
-fakeParse x = Add (resize (unpack x :: Unsigned 8))
+data ParseState
+  = StartOfLine
+  | AwaitingNewLine
+  | Adding (Unsigned 32)
+  | CdOrLs
+  | COfCd
+  | Cd
+  | CdOneDot
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+data MoreOrDone a
+  = More a
+  | Done
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+parseT :: Mealy ParseState (BitVector 8) (Maybe (MoreOrDone Event))
+parseT _ 4 = (StartOfLine, Just Done)
+parseT AwaitingNewLine 10 = (StartOfLine, Nothing)
+parseT AwaitingNewLine _ = (AwaitingNewLine, Nothing)
+parseT StartOfLine 36 = (CdOrLs, Nothing)
+parseT CdOrLs 32 = (CdOrLs, Nothing)
+parseT CdOrLs 99 = (COfCd, Nothing)
+parseT CdOrLs _ = (AwaitingNewLine, Nothing)
+parseT COfCd 100 = (Cd, Nothing)
+parseT COfCd _ = error "Got a command starting with c that was not cd!"
+parseT Cd 32 = (Cd, Nothing)
+parseT Cd 46 = (CdOneDot, Nothing)
+parseT CdOneDot 46 = (AwaitingNewLine, Just (More Pop))
+parseT Cd _ = (CdOneDot, Nothing)
+parseT CdOneDot _ = (AwaitingNewLine, Just (More Push))
+parseT StartOfLine 100 = (AwaitingNewLine, Nothing)
+parseT StartOfLine x = (Adding (resize ((unpack x :: Unsigned 8) - 48)), Nothing)
+parseT (Adding acc) 32 = (AwaitingNewLine, Just (More (Add acc)))
+parseT (Adding acc) x = (Adding (10 * acc + resize ((unpack x :: Unsigned 8) - 48)), Nothing)
+
+data PopHelperState
+  = Running
+  | Popping
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+-- Upon seeing a done, this sends remaining pops
+popHelperT :: Mealy (PopHelperState, Unsigned 8) (Maybe (MoreOrDone Event)) (Maybe (MoreOrDone Event))
+popHelperT s@(Running, _) Nothing = (s, Nothing)
+popHelperT (Running, n) (Just Done) = ((Popping, n), Nothing)
+popHelperT (Running, n) (Just (More Push)) = ((Running, n + 1), Just (More Push))
+popHelperT (Running, n) (Just (More Pop)) = ((Running, n - 1), Just (More Pop))
+popHelperT s@(Running, _) (Just (More x)) = (s, Just (More x))
+popHelperT (Popping, 0) Nothing = ((Running, 0), Just Done)
+popHelperT (Popping, n) Nothing = ((Popping, n - 1), Just (More Pop))
+popHelperT (Popping, _) (Just _) = error "popHelper buffer overrun!"
 
 -- Emits:
 --   - the possible write address/value
 --   - the read address
 --   - _Every_ directory's size
-traverseT :: KnownNat n => Mealy (Index n, Unsigned 64) (Maybe Event, Unsigned 64) (Maybe (Index n, Unsigned 64), Index n, Maybe (Unsigned 64))
-traverseT (ptr, acc) (Just Push, _) =
+traverseT :: KnownNat n => Mealy (Index n, Unsigned 64) (Maybe (MoreOrDone Event), Unsigned 64) (Maybe (Index n, Unsigned 64), Index n, Maybe (MoreOrDone (Unsigned 64)))
+traverseT _ (Just Done, _) = ((0, 0), (Nothing, 0, Just Done))
+traverseT (ptr, acc) (Just (More Push), _) =
   let ptr' = ptr + 1
    in ((ptr', 0), (Just (ptr', acc), ptr', Nothing))
-traverseT (ptr, acc) (Just (Add x), _) =
+traverseT (ptr, acc) (Just (More (Add x)), _) =
   let acc' = acc + resize x
    in ((ptr, acc'), (Nothing, ptr, Nothing))
-traverseT (ptr, acc) (Just Pop, v) =
+traverseT (ptr, acc) (Just (More Pop), v) =
   let ptr' = ptr - 1
-   in ((ptr', acc + v), (Nothing, ptr', Just acc))
+   in ((ptr', acc + v), (Nothing, ptr', Just (More acc)))
 traverseT s@(ptr, _) (Nothing, _) = (s, (Nothing, ptr, Nothing))
 
-runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe Event) -> Signal dom (Maybe (Unsigned 64))
+sumT :: Mealy (Unsigned 64) (MoreOrDone (Unsigned 64)) (Maybe (Unsigned 64))
+sumT acc (More new) = (acc + new, Nothing)
+sumT acc Done = (0, Just acc)
+
+runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (MoreOrDone Event)) -> Signal dom (Maybe (Unsigned 64))
 runCore1 mEventSig =
-  let (mWrite, readAddr, out) =
+  let (mWrite, readAddr, allDirs) =
         unbundle $ mealy traverseT (0 :: Index 256, 0) (bundle (mEventSig, ramOut))
       ramOut = readNew (blockRamU NoClearOnReset (SNat :: SNat 256) undefined) readAddr mWrite
+      filteredDirs =
+        (=<<)
+          ( \case
+              More x -> if x > 100000 then Nothing else Just (More x)
+              Done -> Just Done
+          )
+          <$> allDirs
+      out = join <$> mealy (adapt sumT) 0 filteredDirs
    in out
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom () -> Signal dom (Maybe (Unsigned 64))
@@ -72,8 +134,10 @@ runCore2 =
   pure (pure (pure 0))
 
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64, Unsigned 64))
-runCore mEventSig =
-  let part1 = runCore1 (fmap fakeParse <$> mEventSig)
+runCore mByteSig =
+  let parsed = join <$> mealy (adapt parseT) StartOfLine mByteSig
+      helpedParsed = mealy popHelperT (Running, 0) parsed
+      part1 = runCore1 helpedParsed
       part2 = runCore2 (pure ())
       out = mealy awaitBothT (Nothing, Nothing) (bundle (part1, part2))
    in out
@@ -102,14 +166,14 @@ topEntity clk rst _ input =
    in exposeClockResetEnable run clk' (convertReset clk clk' rst) enableGen input
 
 testOutput1 :: Vec _ Char
-testOutput1 = $(listToVecTH "32")
+testOutput1 = $(listToVecTH "95437")
 
 testOutput2 :: Vec _ Char
 testOutput2 = $(listToVecTH "0")
 
 testInput :: Vec _ Bit
 testInput =
-  let raw = $(listToVecTH " o")
+  let raw = $(listToVecTH "$ cd /\n$ ls\ndir a\n14848514 b.txt\n8504156 c.dat\ndir d\n$ cd a\n$ ls\ndir e\n29116 f\n2557 g\n62596 h.lst\n$ cd e\n$ ls\n584 i\n$ cd ..\n$ cd ..\n$ cd d\n$ ls\n4060174 j\n8033020 d.log\n5626152 d.ext\n7214296 k")
    in ( (1 :> 1 :> 1 :> 1 :> Nil)
           ++ Vector.concatMap charToUartRx raw
           ++ charToUartRx (chr 4)
@@ -118,7 +182,7 @@ testInput =
 
 testInputCore :: Vec _ (Maybe (BitVector 8))
 testInputCore =
-  let raw = $(listToVecTH " u u ooo")
+  let raw = $(listToVecTH "$ cd /\ndir a\n123 x\n$ cd a\ndir b\n456 y\n$ cd ..")
    in ( (Nothing :> Nil)
           ++ fmap (Just . fromIntegral . ord) raw
           ++ (Just 4 :> Nothing :> Nil)
@@ -136,7 +200,7 @@ copyWavedrom1 =
   let en = enableGen
       clk = tbClockGen (False <$ out)
       rst = resetGen :: Reset System
-      inputSignal = stimuliGenerator clk rst (fmap Just (Add 10 :> Add 12 :> Push :> Add 9 :> Push :> Push :> Add 8 :> Pop :> Add 6 :> Pop :> Add 4 :> Pop :> Pop :> Nil) ++ (Nothing :> Nil))
+      inputSignal = stimuliGenerator clk rst (fmap (Just . More) (Add 10 :> Add 12 :> Push :> Add 9 :> Push :> Push :> Add 8 :> Pop :> Add 6 :> Pop :> Add 4 :> Pop :> Pop :> Nil) ++ (Just Done :> Nothing :> Nil))
       out = fmap ShowWave (exposeClockResetEnable runCore1 clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
 
@@ -159,8 +223,8 @@ testBench =
         outputVerifier'
           clk
           rst
-          ( replicate (SNat :: SNat 554) 1
-              ++ replicate (SNat :: SNat 2880) 1
+          ( replicate (SNat :: SNat 30957) 1
+              ++ replicate (SNat :: SNat 2400) 1
               ++ Vector.concatMap charToUartRx testOutput1
               ++ charToUartRx '\n'
               ++ replicate (SNat :: SNat 3040) 1
