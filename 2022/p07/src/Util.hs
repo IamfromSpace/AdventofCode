@@ -117,3 +117,5 @@ bcdOrControlToAscii x =
     Bcd bcd -> bcdToAscii $ pack bcd
     Return -> 10
     Eot -> 4
+
+type Mealy s a b = s -> a -> (s, b)
