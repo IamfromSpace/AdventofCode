@@ -3,13 +3,22 @@
 module Util where
 
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
-import Clash.Prelude (Bit, BitVector, CLog, Char, Eq, Generic, Int, KnownNat, Maybe (..), Ord, SNat (..), Show, Traversable (..), Unsigned, Vec, fmap, fromIntegral, pack, repeat, replicate, snatToNum, subSNat, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<|>), (==))
+import Clash.Prelude (Bit, BitVector, CLog, Char, Eq, Generic, Int, KnownNat, Maybe (..), Ord, SNat (..), Show, Traversable (..), Unsigned, Vec, fmap, fromIntegral, maybe, mempty, pack, repeat, replicate, snatToNum, subSNat, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<|>), (==))
 import qualified Clash.Sized.Vector as Vector
 import Clash.XException (NFDataX, ShowX)
 import Control.DeepSeq (NFData)
 import Data.Char (ord)
 import qualified Data.List as List
+import qualified Data.Map as Map
+import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import GHC.TypeNats (type (+))
+
+data MoreOrDone a
+  = More a
+  | Done
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData, NFDataX, ShowX)
 
 -- Let's us arbitrarily group the number of times the state machine executes in
 -- combinational logic.  Possibly none!
@@ -23,6 +32,14 @@ pureSim _ _ [] = []
 pureSim f s (h : t) =
   let (s', b) = f s h
    in (s', b) : pureSim f s' t
+
+pureSimWithRam :: Ord i => (s -> (a, r) -> (s, (b, i, Maybe (i, r)))) -> s -> [a] -> [(s, Map i r, b)]
+pureSimWithRam f initial values =
+  let f' (s, i, ram) a =
+        let (s', (b, i', write)) = f s (a, fromMaybe undefined $ Map.lookup i ram)
+            ram' = maybe ram (\(addr, v) -> Map.insert addr v ram) write
+         in ((s', i', ram'), b)
+   in (\((s, _, r), b) -> (s, r, b)) <$> pureSim f' (initial, undefined, mempty) values
 
 awaitBothT :: (Maybe a, Maybe b) -> (Maybe a, Maybe b) -> ((Maybe a, Maybe b), Maybe (a, b))
 awaitBothT (mar, mbr) (mai, mbi) =
