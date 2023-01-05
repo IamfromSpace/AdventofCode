@@ -22,7 +22,7 @@ import GHC.Generics (Generic)
 import GHC.TypeNats (type (<=))
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
-import Util (BcdOrControl (..), Mealy, MoreOrDone (..), awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
+import Util (adapt, BcdOrControl (..), Mealy, MoreOrDone (..), awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
@@ -170,15 +170,15 @@ scanT ::
   Mealy
     ((Index n, Index n), ScanMode n)
     (Maybe (MoreOrDone (Index 10)), Index 10)
-    (MoreOrLast Bool, (Index n, Index n), Maybe ((Index n, Index n), Index 10))
+    (Maybe (MoreOrLast Bool), (Index n, Index n), Maybe ((Index n, Index n), Index 10))
 scanT s@(ptr, Receiving) (Nothing, _) =
-  (s, (MoreL False, ptr, Nothing))
+  (s, (Nothing, ptr, Nothing))
 scanT (ptr, Receiving) (Just (More height), _) =
-  ((countSucc ptr, Receiving), (MoreL False, ptr, Just (ptr, height)))
+  ((countSucc ptr, Receiving), (Nothing, ptr, Just (ptr, height)))
 scanT (_, Receiving) (Just Done, _) =
-  (((0, 0), GetNextHeight), (MoreL False, (0, 0), Nothing))
+  (((0, 0), GetNextHeight), (Nothing, (0, 0), Nothing))
 scanT (target, GetNextHeight) (_, height) =
-  ((target, Scanning height L target), (MoreL False, target, Nothing))
+  ((target, Scanning height L target), (Nothing, target, Nothing))
 scanT (target@(tr, tc), Scanning height L ptr@(col, row)) (_, nextHeight) =
   if target == ptr || height > nextHeight
     then
@@ -190,15 +190,15 @@ scanT (target@(tr, tc), Scanning height L ptr@(col, row)) (_, nextHeight) =
           -- only scenarios that need a bound check.
           if tr == maxBound && tc == maxBound
             then -- All trees finished
-              (((0, 0), Receiving), (Last True, (0, 0), Nothing))
+              (((0, 0), Receiving), (Just (Last True), (0, 0), Nothing))
             else
               let target' = countSucc target
                in -- Checking if next tree is visible
-                  ((target', GetNextHeight), (MoreL True, target', Nothing))
+                  ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
         else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height L (col, pred row)), (MoreL False, (col, pred row), Nothing))
+          ((target, Scanning height L (col, pred row)), (Nothing, (col, pred row), Nothing))
     else -- Hidden, move to next direction
-      ((target, Scanning height R target), (MoreL False, target, Nothing))
+      ((target, Scanning height R target), (Nothing, target, Nothing))
 scanT (target@(tr, tc), Scanning height R ptr@(col, row)) (_, nextHeight) =
   if target == ptr || height > nextHeight
     then
@@ -208,15 +208,15 @@ scanT (target@(tr, tc), Scanning height R ptr@(col, row)) (_, nextHeight) =
           -- Hitting the bound here happens when it's not visible from the L
           if tr == maxBound && tc == maxBound
             then -- All trees finished
-              (((0, 0), Receiving), (Last True, (0, 0), Nothing))
+              (((0, 0), Receiving), (Just (Last True), (0, 0), Nothing))
             else
               let target' = countSucc target
                in -- Checking if next tree is visible
-                  ((target', GetNextHeight), (MoreL True, target', Nothing))
+                  ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
         else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height R (col, succ row)), (MoreL False, (col, succ row), Nothing))
+          ((target, Scanning height R (col, succ row)), (Nothing, (col, succ row), Nothing))
     else -- Hidden, move to next direction
-      ((target, Scanning height U target), (MoreL False, target, Nothing))
+      ((target, Scanning height U target), (Nothing, target, Nothing))
 scanT (target, Scanning height U ptr@(col, row)) (_, nextHeight) =
   if target == ptr || height > nextHeight
     then
@@ -225,11 +225,11 @@ scanT (target, Scanning height U ptr@(col, row)) (_, nextHeight) =
 
           let target' = countSucc target
            in -- Checking if next tree is visible
-              ((target', GetNextHeight), (MoreL True, target', Nothing))
+              ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
         else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height U (pred col, row)), (MoreL False, (pred col, row), Nothing))
+          ((target, Scanning height U (pred col, row)), (Nothing, (pred col, row), Nothing))
     else -- Hidden, move to next direction
-      ((target, Scanning height D target), (MoreL False, target, Nothing))
+      ((target, Scanning height D target), (Nothing, target, Nothing))
 scanT (target, Scanning height D ptr@(col, row)) (_, nextHeight) =
   if target == ptr || height > nextHeight
     then
@@ -238,14 +238,14 @@ scanT (target, Scanning height D ptr@(col, row)) (_, nextHeight) =
 
           let target' = countSucc target
            in -- Checking if next tree is visible
-              ((target', GetNextHeight), (MoreL True, target', Nothing))
+              ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
         else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height D (succ col, row)), (MoreL False, (succ col, row), Nothing))
+          ((target, Scanning height D (succ col, row)), (Nothing, (succ col, row), Nothing))
     else -- Hidden but no more directions
 
       let target' = countSucc target
        in -- Checking if next tree is visible
-          ((target', GetNextHeight), (MoreL False, target', Nothing))
+          ((target', GetNextHeight), (Nothing, target', Nothing))
 
 sumT :: Unsigned 64 -> MoreOrLast Bool -> (Unsigned 64, Maybe (Unsigned 64))
 sumT acc (MoreL False) = (acc, Nothing)
@@ -260,7 +260,7 @@ runCore1 mByteSig =
       readAddr = pack <$> readAddrUnpacked
       mWrite = fmap (fmap (\(a, b) -> (pack a, b))) mWriteUnpacked
       ramOut = blockRamU NoClearOnReset (SNat :: SNat 16384) undefined readAddr mWrite
-      out = mealy sumT 0 visibility
+      out = join <$> mealy (adapt sumT) 0 visibility
    in out
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom () -> Signal dom (Maybe (Unsigned 64))

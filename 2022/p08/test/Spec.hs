@@ -1,11 +1,12 @@
 import Aoc (ScanMode (..), parse, scanT, sumT)
 import Clash.Prelude (IO, Index, Maybe (..), Vec, const, fmap, fromIntegral, id, snd, toList, ($), (.), (<>), (==))
+import Control.Monad (join)
 import Data.Char (ord)
 import qualified Data.List as List
 import Test.Hspec (describe, it, shouldBe)
 import Test.Hspec.QuickCheck (modifyMaxSuccess, prop)
 import Test.Hspec.Runner (hspec)
-import Util (MoreOrDone (..), pureSim, pureSimWithRam)
+import Util (MoreOrDone (..), adapt, pureSim, pureSimWithRam)
 
 main :: IO ()
 main =
@@ -21,8 +22,8 @@ main =
           shouldBe [Just 21] $
             List.take 1 $
               List.dropWhile ((==) Nothing) $
-                fmap snd $
-                  pureSim sumT 0 $
+                fmap (join . snd) $
+                  pureSim (adapt sumT) 0 $
                     fmap (\(_, _, b) -> b) $
                       pureSimWithRam scanT ((0 :: Index 5, 0), Receiving) $
                         fmap
@@ -47,8 +48,8 @@ transforms xs =
       go f =
         List.take 1 $
           List.dropWhile ((==) Nothing) $
-            fmap snd $
-              pureSim sumT 0 $
+            fmap (join . snd) $
+              pureSim (adapt sumT) 0 $
                 fmap (\(_, _, b) -> b) $
                   pureSimWithRam
                     scanT
