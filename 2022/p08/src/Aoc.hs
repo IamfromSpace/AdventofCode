@@ -22,7 +22,7 @@ import GHC.Generics (Generic)
 import GHC.TypeNats (type (<=))
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
-import Util (adapt, BcdOrControl (..), Mealy, MoreOrDone (..), awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
+import Util (BcdOrControl (..), Mealy, MoreOrDone (..), adapt, awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
@@ -153,7 +153,7 @@ data ScanDir
 data ScanMode n
   = Receiving
   | GetNextHeight
-  | Scanning (Index 10) ScanDir (Index n, Index n)
+  | Scanning (Index 10) ScanDir (Index n, Index n) Bool
   deriving stock (Generic, Show, Eq, Ord)
   deriving anyclass (NFData, NFDataX, ShowX)
 
@@ -178,74 +178,37 @@ scanT (ptr, Receiving) (Just (More height), _) =
 scanT (_, Receiving) (Just Done, _) =
   (((0, 0), GetNextHeight), (Nothing, (0, 0), Nothing))
 scanT (target, GetNextHeight) (_, height) =
-  ((target, Scanning height L target), (Nothing, target, Nothing))
-scanT (target@(tr, tc), Scanning height L ptr@(col, row)) (_, nextHeight) =
-  if target == ptr || height > nextHeight
-    then
-      if row == minBound
-        then -- Visible
-
-          -- Hitting the bound here happens when it's visible from the L
-          -- TODO: If we start our search to the right or down, those are the
-          -- only scenarios that need a bound check.
-          if tr == maxBound && tc == maxBound
-            then -- All trees finished
-              (((0, 0), Receiving), (Just (Last True), (0, 0), Nothing))
-            else
-              let target' = countSucc target
-               in -- Checking if next tree is visible
-                  ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
-        else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height L (col, pred row)), (Nothing, (col, pred row), Nothing))
-    else -- Hidden, move to next direction
-      ((target, Scanning height R target), (Nothing, target, Nothing))
-scanT (target@(tr, tc), Scanning height R ptr@(col, row)) (_, nextHeight) =
-  if target == ptr || height > nextHeight
-    then
-      if row == maxBound
-        then -- Visible
-
-          -- Hitting the bound here happens when it's not visible from the L
-          if tr == maxBound && tc == maxBound
-            then -- All trees finished
-              (((0, 0), Receiving), (Just (Last True), (0, 0), Nothing))
-            else
-              let target' = countSucc target
-               in -- Checking if next tree is visible
-                  ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
-        else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height R (col, succ row)), (Nothing, (col, succ row), Nothing))
-    else -- Hidden, move to next direction
-      ((target, Scanning height U target), (Nothing, target, Nothing))
-scanT (target, Scanning height U ptr@(col, row)) (_, nextHeight) =
-  if target == ptr || height > nextHeight
-    then
-      if col == minBound
-        then -- Visible
-
-          let target' = countSucc target
-           in -- Checking if next tree is visible
-              ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
-        else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height U (pred col, row)), (Nothing, (pred col, row), Nothing))
-    else -- Hidden, move to next direction
-      ((target, Scanning height D target), (Nothing, target, Nothing))
-scanT (target, Scanning height D ptr@(col, row)) (_, nextHeight) =
-  if target == ptr || height > nextHeight
-    then
-      if col == maxBound
-        then -- Visible
-
-          let target' = countSucc target
-           in -- Checking if next tree is visible
-              ((target', GetNextHeight), (Just (MoreL True), target', Nothing))
-        else -- Possibly visible, move to the next tree that might be blocking
-          ((target, Scanning height D (succ col, row)), (Nothing, (succ col, row), Nothing))
-    else -- Hidden but no more directions
-
-      let target' = countSucc target
-       in -- Checking if next tree is visible
-          ((target', GetNextHeight), (Nothing, target', Nothing))
+  ((target, Scanning height L target False), (Nothing, target, Nothing))
+scanT (target, Scanning height L ptr@(col, row) prevVisible) (_, nextHeight) =
+  let knownVisible = row == minBound && (ptr == target || height > nextHeight)
+      knownHidden = ptr /= target && height <= nextHeight
+   in if knownVisible || knownHidden
+        then ((target, Scanning height R target (knownVisible || prevVisible)), (Nothing, target, Nothing))
+        else ((target, Scanning height L (col, pred row) prevVisible), (Nothing, (col, pred row), Nothing))
+scanT (target, Scanning height R ptr@(col, row) prevVisible) (_, nextHeight) =
+  let knownVisible = row == maxBound && (ptr == target || height > nextHeight)
+      knownHidden = ptr /= target && height <= nextHeight
+   in if knownVisible || knownHidden
+        then ((target, Scanning height U target (knownVisible || prevVisible)), (Nothing, target, Nothing))
+        else ((target, Scanning height R (col, succ row) prevVisible), (Nothing, (col, succ row), Nothing))
+scanT (target, Scanning height U ptr@(col, row) prevVisible) (_, nextHeight) =
+  let knownVisible = col == minBound && (ptr == target || height > nextHeight)
+      knownHidden = ptr /= target && height <= nextHeight
+   in if knownVisible || knownHidden
+        then ((target, Scanning height D target (knownVisible || prevVisible)), (Nothing, target, Nothing))
+        else ((target, Scanning height U (pred col, row) prevVisible), (Nothing, (pred col, row), Nothing))
+scanT (target@(tc, tr), Scanning height D ptr@(col, row) prevVisible) (_, nextHeight) =
+  let knownVisible = col == maxBound && (ptr == target || height > nextHeight)
+      knownHidden = ptr /= target && height <= nextHeight
+   in if knownVisible || knownHidden
+        then
+          let visible = knownVisible || prevVisible
+           in if tr == maxBound && tc == maxBound
+                then (((0, 0), Receiving), (Just (Last visible), (0, 0), Nothing))
+                else
+                  let target' = countSucc target
+                   in ((target', GetNextHeight), (Just (MoreL visible), target', Nothing))
+        else ((target, Scanning height D (succ col, row) prevVisible), (Nothing, (succ col, row), Nothing))
 
 sumT :: Unsigned 64 -> MoreOrLast Bool -> (Unsigned 64, Maybe (Unsigned 64))
 sumT acc (MoreL False) = (acc, Nothing)

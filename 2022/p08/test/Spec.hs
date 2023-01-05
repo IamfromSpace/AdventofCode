@@ -1,5 +1,5 @@
 import Aoc (ScanMode (..), parse, scanT, sumT)
-import Clash.Prelude (IO, Index, Maybe (..), Vec, const, fmap, fromIntegral, id, snd, toList, ($), (.), (<>), (==))
+import Clash.Prelude (IO, Index, Maybe (..), Vec, const, flip, fmap, fromIntegral, id, snd, toList, ($), (.), (<>), (==))
 import Control.Monad (join)
 import Data.Char (ord)
 import qualified Data.List as List
@@ -19,7 +19,7 @@ main =
             transforms
       describe "pure example" $
         it "should return 21" $
-          shouldBe [Just 21] $
+          flip shouldBe [Just 21] $
             List.take 1 $
               List.dropWhile ((==) Nothing) $
                 fmap (join . snd) $
