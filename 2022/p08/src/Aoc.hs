@@ -153,14 +153,14 @@ data ScanDir
 data ScanMode n
   = Receiving
   | GetNextHeight
-  | Scanning (Index 10) ScanDir (Index n, Index n) Bool
+  | Scanning (Index 10) ScanDir (Index n, Index n) Bool (Index n) (Unsigned 64)
   deriving stock (Generic, Show, Eq, Ord)
   deriving anyclass (NFData, NFDataX, ShowX)
 
 data MoreOrLast a
   = MoreL a
   | Last a
-  deriving stock (Generic, Show, Eq, Ord)
+  deriving stock (Generic, Show, Eq, Ord, Functor)
   deriving anyclass (NFData, NFDataX, ShowX)
 
 -- OH GOD IT'S SO AWFUL
@@ -170,7 +170,7 @@ scanT ::
   Mealy
     ((Index n, Index n), ScanMode n)
     (Maybe (MoreOrDone (Index 10)), Index 10)
-    (Maybe (MoreOrLast Bool), (Index n, Index n), Maybe ((Index n, Index n), Index 10))
+    (Maybe (MoreOrLast (Unsigned 64, Bool)), (Index n, Index n), Maybe ((Index n, Index n), Index 10))
 scanT s@(ptr, Receiving) (Nothing, _) =
   (s, (Nothing, ptr, Nothing))
 scanT (ptr, Receiving) (Just (More height), _) =
@@ -178,37 +178,37 @@ scanT (ptr, Receiving) (Just (More height), _) =
 scanT (_, Receiving) (Just Done, _) =
   (((0, 0), GetNextHeight), (Nothing, (0, 0), Nothing))
 scanT (target, GetNextHeight) (_, height) =
-  ((target, Scanning height L target False), (Nothing, target, Nothing))
-scanT (target, Scanning height L ptr@(col, row) prevVisible) (_, nextHeight) =
+  ((target, Scanning height L target False 0 1), (Nothing, target, Nothing))
+scanT (target, Scanning height L ptr@(col, row) prevVisible viewCount score) (_, nextHeight) =
   let knownVisible = row == minBound && (ptr == target || height > nextHeight)
       knownHidden = ptr /= target && height <= nextHeight
    in if knownVisible || knownHidden
-        then ((target, Scanning height R target (knownVisible || prevVisible)), (Nothing, target, Nothing))
-        else ((target, Scanning height L (col, pred row) prevVisible), (Nothing, (col, pred row), Nothing))
-scanT (target, Scanning height R ptr@(col, row) prevVisible) (_, nextHeight) =
+        then ((target, Scanning height R target (knownVisible || prevVisible) 0 (fromIntegral viewCount * score)), (Nothing, target, Nothing))
+        else ((target, Scanning height L (col, pred row) prevVisible (viewCount + 1) score), (Nothing, (col, pred row), Nothing))
+scanT (target, Scanning height R ptr@(col, row) prevVisible viewCount score) (_, nextHeight) =
   let knownVisible = row == maxBound && (ptr == target || height > nextHeight)
       knownHidden = ptr /= target && height <= nextHeight
    in if knownVisible || knownHidden
-        then ((target, Scanning height U target (knownVisible || prevVisible)), (Nothing, target, Nothing))
-        else ((target, Scanning height R (col, succ row) prevVisible), (Nothing, (col, succ row), Nothing))
-scanT (target, Scanning height U ptr@(col, row) prevVisible) (_, nextHeight) =
+        then ((target, Scanning height U target (knownVisible || prevVisible) 0 (fromIntegral viewCount * score)), (Nothing, target, Nothing))
+        else ((target, Scanning height R (col, succ row) prevVisible (viewCount + 1) score), (Nothing, (col, succ row), Nothing))
+scanT (target, Scanning height U ptr@(col, row) prevVisible viewCount score) (_, nextHeight) =
   let knownVisible = col == minBound && (ptr == target || height > nextHeight)
       knownHidden = ptr /= target && height <= nextHeight
    in if knownVisible || knownHidden
-        then ((target, Scanning height D target (knownVisible || prevVisible)), (Nothing, target, Nothing))
-        else ((target, Scanning height U (pred col, row) prevVisible), (Nothing, (pred col, row), Nothing))
-scanT (target@(tc, tr), Scanning height D ptr@(col, row) prevVisible) (_, nextHeight) =
+        then ((target, Scanning height D target (knownVisible || prevVisible) 0 (fromIntegral viewCount * score)), (Nothing, target, Nothing))
+        else ((target, Scanning height U (pred col, row) prevVisible (viewCount + 1) score), (Nothing, (pred col, row), Nothing))
+scanT (target@(tc, tr), Scanning height D ptr@(col, row) prevVisible viewCount score) (_, nextHeight) =
   let knownVisible = col == maxBound && (ptr == target || height > nextHeight)
       knownHidden = ptr /= target && height <= nextHeight
    in if knownVisible || knownHidden
         then
-          let visible = knownVisible || prevVisible
+          let out = (fromIntegral viewCount * score, knownVisible || prevVisible)
            in if tr == maxBound && tc == maxBound
-                then (((0, 0), Receiving), (Just (Last visible), (0, 0), Nothing))
+                then (((0, 0), Receiving), (Just (Last out), (0, 0), Nothing))
                 else
                   let target' = countSucc target
-                   in ((target', GetNextHeight), (Just (MoreL visible), target', Nothing))
-        else ((target, Scanning height D (succ col, row) prevVisible), (Nothing, (succ col, row), Nothing))
+                   in ((target', GetNextHeight), (Just (MoreL out), target', Nothing))
+        else ((target, Scanning height D (succ col, row) prevVisible (viewCount + 1) score), (Nothing, (succ col, row), Nothing))
 
 sumT :: Unsigned 64 -> MoreOrLast Bool -> (Unsigned 64, Maybe (Unsigned 64))
 sumT acc (MoreL False) = (acc, Nothing)
@@ -216,24 +216,19 @@ sumT acc (MoreL True) = (succ acc, Nothing)
 sumT acc (Last False) = (0, Just acc)
 sumT acc (Last True) = (0, Just (succ acc))
 
-runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
-runCore1 mByteSig =
-  let parsed = (=<<) parse <$> mByteSig
-      (visibility, readAddrUnpacked, mWriteUnpacked) = unbundle $ mealy scanT ((0 :: Index 99, 0), Receiving) $ bundle (parsed, ramOut)
-      readAddr = pack <$> readAddrUnpacked
-      mWrite = fmap (fmap (\(a, b) -> (pack a, b))) mWriteUnpacked
-      ramOut = blockRamU NoClearOnReset (SNat :: SNat 16384) undefined readAddr mWrite
-      out = join <$> mealy (adapt sumT) 0 visibility
-   in out
-
-runCore2 :: HiddenClockResetEnable dom => Signal dom () -> Signal dom (Maybe (Unsigned 64))
-runCore2 =
-  pure (pure (pure 0))
+maxT :: Unsigned 64 -> MoreOrLast (Unsigned 64) -> (Unsigned 64, Maybe (Unsigned 64))
+maxT acc (MoreL x) = (max acc x, Nothing)
+maxT acc (Last x) = (0, Just (max acc x))
 
 runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64, Unsigned 64))
 runCore mByteSig =
-  let part1 = runCore1 mByteSig
-      part2 = runCore2 (pure ())
+  let parsed = (=<<) parse <$> mByteSig
+      (mMolScoreAndVisibility, readAddrUnpacked, mWriteUnpacked) = unbundle $ mealy scanT ((0 :: Index 99, 0), Receiving) $ bundle (parsed, ramOut)
+      readAddr = pack <$> readAddrUnpacked
+      mWrite = fmap (fmap (\(a, b) -> (pack a, b))) mWriteUnpacked
+      ramOut = blockRamU NoClearOnReset (SNat :: SNat 16384) undefined readAddr mWrite
+      part1 = join <$> mealy (adapt sumT) 0 (fmap (fmap (fmap snd)) mMolScoreAndVisibility)
+      part2 = join <$> mealy (adapt maxT) 0 (fmap (fmap (fmap fst)) mMolScoreAndVisibility)
       out = mealy awaitBothT (Nothing, Nothing) (bundle (part1, part2))
    in out
 
