@@ -133,6 +133,26 @@ createDomain (knownVDomain @System){vName="Alchitry3", vResetPolarity=ActiveLow,
 -- and the bottom.
 --
 -- Back to the naive approach
+--
+-- Note: originally I was thinking naively about de-duping and thinking that I
+-- had to have a big memory block of bits for each coordinate, then replay
+-- _every single addresss_ seeing if the bit was flipped.  In reality, we can
+-- make a dedup circuit very simply, that upon receipt of some present address,
+-- checks the address, then forwards it if not present, then flips the bit at
+-- that address.
+--
+-- There is an O(n) approach to this, but we still have to buffer everything
+-- and sweep each row and column (in both directions).  But we can do each
+-- sweep one at at time.  The trick is to look for the next greatest neighbor
+-- using a stack, and either record its value/index for p1/p2 respectively.
+--
+-- However, even in this algorithm, we're out of memory for p2, because we
+-- can't release view scores until they're fully calculated.  By calculating
+-- one direction entirely first, our largest value is 48*48, after which we can
+-- then stream the other direction.  But that still leaves 12b * 99 * 99, which
+-- needs 90% of our RAM, and we already need a lot.  Our minimum practical size
+-- of just capturing the grid is 38.7% of our RAM (otherwise we need to do
+-- division, and that still only gets down to ~30%).
 
 parse :: BitVector 8 -> Maybe (MoreOrDone (Index 10))
 parse 4 = Just Done
