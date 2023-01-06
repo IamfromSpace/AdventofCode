@@ -199,14 +199,26 @@ isOutsideOf7Bit :: KnownNat n => (MoreOrDone (V2 n)) -> Maybe (MoreOrDone ())
 isOutsideOf7Bit Done = Just Done
 isOutsideOf7Bit (More (Vector (Sum {getSum = x} :> Sum {getSum = y} :> Nil))) = if x > 62 || x < -63 || y > 62 || y < -63 then Just (More ()) else Nothing
 
+-- Pre-filter out items base on their top bits
+-- Note: technically this could work for _any_ division of 4^n
+selectQuadrant :: BitVector 2 -> MoreOrDone (V2 9) -> Maybe (MoreOrDone (BitVector 16))
+selectQuadrant _ Done = Just Done
+selectQuadrant quad (More x) =
+  if quad == resize (shiftR (pack x :: BitVector 18) 16)
+    then Just (More (resize (pack x)))
+    else Nothing
+
 runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore1 mBytes =
-  let parsed = join <$> mealy (adapt parseT) StartOfLine mBytes
+  let -- Hack to manually run 4 times, testing a different quadrant each time
+      selectedQuadrant = 3
+
+      parsed = join <$> mealy (adapt parseT) StartOfLine mBytes
       singleInstructions = mealy expandT Nothing parsed
       tailPositions = join <$> mealy (adapt followT) (FollowState {originToTail = mempty :: V2 9, tailToHead = mempty}) singleInstructions
-      uniqueTailPositions = deduplicate (Vector (0 :> 0 :> Nil)) tailPositions
+      tailPositionsInQuadrant = fmap ((=<<) (selectQuadrant selectedQuadrant)) tailPositions
+      uniqueTailPositions = deduplicate 0 tailPositionsInQuadrant
       out = join <$> mealy (adapt countEventsT) 0 uniqueTailPositions
-
       -- Figure out how many (raw) events exceed our 1/2 max RAM
       -- tooBig = fmap ((=<<) isOutsideOf8Bit) tailPositions
       -- out = join <$> mealy (adapt countEventsT) 0 tooBig
