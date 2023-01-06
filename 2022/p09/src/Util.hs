@@ -1,16 +1,18 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Util where
 
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
-import Clash.Prelude (Bit, BitVector, CLog, Char, Eq, Generic, Int, KnownNat, Maybe (..), Ord, SNat (..), Show, Traversable (..), Unsigned, Vec, fmap, fromIntegral, maybe, mempty, pack, repeat, replicate, snatToNum, subSNat, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<|>), (==))
+import Clash.Prelude (Bit, BitPack, BitVector, CLog, Char, Eq, Functor, Generic, Int, KnownNat, Maybe (..), Monoid, Ord, SNat (..), Semigroup, Show, Traversable (..), Unsigned, Vec, fmap, fromIntegral, maybe, mempty, pack, repeat, replicate, snatToNum, subSNat, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<>), (<|>), (==))
 import qualified Clash.Sized.Vector as Vector
 import Clash.XException (NFDataX, ShowX)
 import Control.DeepSeq (NFData)
 import Data.Char (ord)
+import Data.Group (Group (..))
 import qualified Data.List as List
-import qualified Data.Map as Map
 import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import GHC.TypeNats (type (+))
 
@@ -18,7 +20,7 @@ data MoreOrDone a
   = More a
   | Done
   deriving stock (Generic, Show, Eq, Ord)
-  deriving anyclass (NFData, NFDataX, ShowX)
+  deriving anyclass (NFData, NFDataX, ShowX, BitPack)
 
 -- Let's us arbitrarily group the number of times the state machine executes in
 -- combinational logic.  Possibly none!
@@ -37,6 +39,14 @@ pureSimWithRam :: Ord i => (s -> (a, r) -> (s, (b, i, Maybe (i, r)))) -> s -> [a
 pureSimWithRam f initial values =
   let f' (s, i, ram) a =
         let (s', (b, i', write)) = f s (a, fromMaybe undefined $ Map.lookup i ram)
+            ram' = maybe ram (\(addr, v) -> Map.insert addr v ram) write
+         in ((s', i', ram'), b)
+   in (\((s, _, r), b) -> (s, r, b)) <$> pureSim f' (initial, undefined, mempty) values
+
+pureSimWithRam1 :: Ord i => r -> (s -> (a, r) -> (s, (b, i, Maybe (i, r)))) -> s -> [a] -> [(s, Map i r, b)]
+pureSimWithRam1 initialized f initial values =
+  let f' (s, i, ram) a =
+        let (s', (b, i', write)) = f s (a, fromMaybe initialized $ Map.lookup i ram)
             ram' = maybe ram (\(addr, v) -> Map.insert addr v ram) write
          in ((s', i', ram'), b)
    in (\((s, _, r), b) -> (s, r, b)) <$> pureSim f' (initial, undefined, mempty) values
@@ -136,3 +146,16 @@ bcdOrControlToAscii x =
     Eot -> 4
 
 type Mealy s a b = s -> a -> (s, b)
+
+newtype Vector a = Vector {getVector :: a}
+  deriving stock (Generic, Show, Eq, Ord, Functor)
+  deriving anyclass (NFData, NFDataX, BitPack)
+
+instance Semigroup a => Semigroup (Vector (Vec n a)) where
+  Vector a <> Vector b = Vector $ Vector.zipWith (<>) a b
+
+instance (KnownNat n, Monoid a) => Monoid (Vector (Vec n a)) where
+  mempty = Vector (Vector.repeat mempty)
+
+instance (KnownNat n, Group a) => Group (Vector (Vec n a)) where
+  invert (Vector v) = Vector $ fmap invert v
