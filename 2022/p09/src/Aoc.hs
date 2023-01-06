@@ -13,6 +13,7 @@ import Clash.WaveDrom (BitsWave (BitsWave), ShowWave (ShowWave), ToWave, render,
 import Clash.XException (NFDataX, ShowX)
 import Control.DeepSeq (NFData)
 import Control.Monad (join)
+import Data.Bits (shiftR)
 import Data.ByteString.UTF8 ()
 import Data.Char (chr, ord)
 import Data.Group (Group (invert))
@@ -117,7 +118,29 @@ followT FollowState {originToTail, tailToHead} (More v) =
       tailToHead' = invert toFollow <> headMoved
    in (FollowState {originToTail = originToTail', tailToHead = tailToHead'}, Just (More originToTail'))
 
--- TODO: There is definitely not enough RAM for this
+-- TODO: There is definitely not enough RAM for this.
+--
+-- Something like a HashSet/trie requires us to store the deduped value itelf,
+-- plus pointers, with 5-11k items of 18-bits and pointers of ~13-bits, this
+-- just isn't possible.
+--
+-- Using randomness gets killed by the birthday problem right out of the gate.
+-- For our maximum RAM we can't even go above 52 items before we have a 1%
+-- chance of collision.  By 430 we're at a 50/50 of getting a correct answer.
+-- There's just no way to slice this (such as a combo of randomeness and
+-- non-randomness) that doesn't yield collisions with a high probability.  We
+-- have ~3000k raw elements that exceed our naive bounds.
+--
+-- Since we've got 1/2 the needed ram (and only a 1/4 utilizable by synthesis
+-- without extra work), we could consider just counting by quadrant and running
+-- the input through 4 times.
+--
+-- It is possible to buffer the entire input, replay it 4 times, and check a
+-- different quadrant each time.  The input is about ~22kb if you consider 7b
+-- for the iteration count and 2b per vector dimension.  That 7b could even
+-- shrink to 5b since we don't ever actually see both digits utilized (no
+-- iteration count is over 20).  That's as low as 18kb.
+--
 -- TODO: This only works exactly once!
 -- Receipt of a Done needs to reset all positions
 deduplicateT :: Eq a => a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), Bool) (Maybe (MoreOrDone a), a, Maybe (a, Bool))
@@ -143,16 +166,60 @@ deduplicate defaultRead mA =
       -- this is everything we got and absolutely may not be enough RAM
       -- Almost certainly too small because it means we can only go 128 to the
       -- left and right :(
-      ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 64000) False) (pack <$> readAddr) (fmap (fmap (\(a, b) -> (pack a, b))) write)
+      --
+      -- NOTE: It appears that Yosys doesn't use masking here to make each
+      -- individual bit fully addressable, as we only seem to be able to
+      -- utilize half our available RAM.  Instead it looks like it's using the
+      -- 2048x2 configuration, meaning that we still need 2 bits for every one
+      -- used.  It would be possible to do per-bit masking "by hand" to get
+      -- this last bit (but it's still not really enough).
+      --
+      -- If we use the full 16b width and then manually mask, this lets us
+      -- reset the RAM 16x faster.  We could go even faster by allowing
+      -- each block to write simultaneously.
+      ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 65536) False) (pack <$> readAddr) (fmap (fmap (\(a, b) -> (pack a, b))) write)
    in out
+
+biggestBoundT ::
+  KnownNat n =>
+  Mealy
+    (Unsigned 64)
+    (Maybe (MoreOrDone (V2 n)))
+    (Maybe (Unsigned 64))
+biggestBoundT acc Nothing = (acc, Nothing)
+biggestBoundT acc (Just (Done)) = (0, Just acc)
+biggestBoundT acc (Just (More (Vector (Sum {getSum = x} :> Sum {getSum = y} :> Nil)))) =
+  (max acc (fromIntegral (max (abs x) (abs y))), Nothing)
+
+isOutsideOf8Bit :: KnownNat n => (MoreOrDone (V2 n)) -> Maybe (MoreOrDone ())
+isOutsideOf8Bit Done = Just Done
+isOutsideOf8Bit (More (Vector (Sum {getSum = x} :> Sum {getSum = y} :> Nil))) = if x > 126 || x < -127 || y > 126 || y < -127 then Just (More ()) else Nothing
+
+isOutsideOf7Bit :: KnownNat n => (MoreOrDone (V2 n)) -> Maybe (MoreOrDone ())
+isOutsideOf7Bit Done = Just Done
+isOutsideOf7Bit (More (Vector (Sum {getSum = x} :> Sum {getSum = y} :> Nil))) = if x > 62 || x < -63 || y > 62 || y < -63 then Just (More ()) else Nothing
 
 runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Unsigned 64))
 runCore1 mBytes =
   let parsed = join <$> mealy (adapt parseT) StartOfLine mBytes
       singleInstructions = mealy expandT Nothing parsed
-      tailPositions = join <$> mealy (adapt followT) (FollowState {originToTail = mempty :: V2 8, tailToHead = mempty}) singleInstructions
+      tailPositions = join <$> mealy (adapt followT) (FollowState {originToTail = mempty :: V2 9, tailToHead = mempty}) singleInstructions
       uniqueTailPositions = deduplicate (Vector (0 :> 0 :> Nil)) tailPositions
       out = join <$> mealy (adapt countEventsT) 0 uniqueTailPositions
+
+      -- Figure out how many (raw) events exceed our 1/2 max RAM
+      -- tooBig = fmap ((=<<) isOutsideOf8Bit) tailPositions
+      -- out = join <$> mealy (adapt countEventsT) 0 tooBig
+
+      -- Figure out how many (raw) events exceed 1/4 our max RAM
+      -- tooBig = fmap ((=<<) isOutsideOf7Bit) tailPositions
+      -- out = join <$> mealy (adapt countEventsT) 0 tooBig
+
+      -- Figure out how many bits are needed
+      -- out = mealy biggestBoundT 0 tailPositions
+
+      -- Figure out how many raw events there are
+      -- out = join <$> mealy (adapt countEventsT) 0 tailPositions
    in out
 
 runCore2 :: HiddenClockResetEnable dom => Signal dom () -> Signal dom (Maybe (Unsigned 64))
