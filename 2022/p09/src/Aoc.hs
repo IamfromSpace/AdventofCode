@@ -5,7 +5,7 @@ module Aoc where
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
-import Clash.Prelude (Bit, BitPack, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, pack, register, replicate, resetGen, resize, unbundle, vName, vPeriod, vResetPolarity)
+import Clash.Prelude (Bit, BitPack, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, pack, register, replicate, resetGen, resize, unbundle, vName, vPeriod, vResetPolarity, (!), replaceBit)
 import Clash.Prelude.BlockRam (ResetStrategy (ClearOnReset), blockRam1, readNew)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
 import qualified Clash.Sized.Vector as Vector
@@ -153,16 +153,42 @@ trackTailT originToTail (More toFollow) =
 --
 -- TODO: This only works exactly once!
 -- Receipt of a Done needs to reset all positions
-deduplicateT :: Eq a => a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), Bool) (Maybe (MoreOrDone a), a, Maybe (a, Bool))
-deduplicateT defaultRead prev (next, prevWasPresent) =
+--
+-- TODO: Type params for this for arbitrary depth and width
+deduplicateT :: BitPack a => a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), BitVector 256) (Maybe (MoreOrDone a), BitVector 8, Maybe (BitVector 8, BitVector 256))
+deduplicateT defaultRead prev (next, prevWasPresentBv) =
+  let output =
+        case prev of
+          Just (More x) ->
+            -- take the bottom bits to get the BV address
+            let index = resize (pack x) :: BitVector 8
+            in if (prevWasPresentBv ! index) == 1 then
+              Nothing
+            else
+              prev
+          _ -> prev
+      readAddr =
+        let v = case next of
+              Just (More x) -> x
+              _ -> defaultRead
+        -- take the top bits to get the RAM address
+        in resize (shiftR (pack v) 8) :: BitVector 8
+      mWrite =
+        case prev of
+          Just (More x) ->
+            -- TODO: BitPack.split is probably the way to go and should do some
+            -- type wizardry for us.
+            let packed = pack x
+                index = resize packed :: BitVector 8
+                bv' = replaceBit index 1 prevWasPresentBv
+                ramAddr = resize (shiftR packed 8) :: BitVector 8
+             in Just (ramAddr, bv')
+          _ -> Nothing
+  in
   ( next,
-    ( prev >>= (\x -> if not prevWasPresent || x == Done then Just x else Nothing),
-      case next of
-        Just (More x) -> x
-        _ -> defaultRead,
-      case prev of
-        Just (More x) -> Just (x, True)
-        _ -> Nothing
+    ( output,
+      readAddr,
+      mWrite
     )
   )
 
@@ -170,25 +196,10 @@ countEventsT :: Mealy (Unsigned 64) (MoreOrDone a) (Maybe (Unsigned 64))
 countEventsT acc Done = (0, Just acc)
 countEventsT acc (More _) = (acc + 1, Nothing)
 
-deduplicate :: Eq a => HiddenClockResetEnable dom => BitPack a => NFDataX a => a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
+deduplicate :: HiddenClockResetEnable dom => BitPack a => NFDataX a => a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
 deduplicate defaultRead mA =
   let (out, readAddr, write) = unbundle $ mealy (deduplicateT defaultRead) Nothing (bundle (mA, ramOut))
-      -- this is everything we got and absolutely may not be enough RAM
-      -- Almost certainly too small because it means we can only go 128 to the
-      -- left and right :(
-      --
-      -- NOTE: It appears that Yosys doesn't use masking here to make each
-      -- individual bit fully addressable, as we only seem to be able to
-      -- utilize half our available RAM.  Instead it looks like it's using the
-      -- 2048x2 configuration, meaning that we still need 2 bits for every one
-      -- used.  It would be possible to do per-bit masking "by hand" to get
-      -- this last bit (but it's still not really enough).
-      --
-      -- If we use the full 16b width and then manually mask, this lets us
-      -- reset the RAM 16x faster.  And if we use a 256b width, we can reset
-      -- all addresses across 16 block RAMs simultaneously, so it only takes
-      -- 256 cycles to reset them all..
-      ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 65536) False) (pack <$> readAddr) (fmap (fmap (\(a, b) -> (pack a, b))) write)
+      ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 256) 0) readAddr write
    in out
 
 biggestBoundT ::
@@ -317,12 +328,33 @@ testInputCore =
           ++ (Just 4 :> Nothing :> Nil)
       )
 
+testInputCore2 :: Vec _ (Maybe (BitVector 8))
+testInputCore2 =
+  -- A couple hacks here since we can't actually accept data this quickly, need
+  -- to end on 1 instruction or we miss the Done signal, and we add spaces to
+  -- not read to fast since they act as a no-op
+  let raw = $(listToVecTH "R 5\nU   8\nL      8\nD      3\nR 17\nD                10\nL        25\nU                       19\nU                 1\n")
+   in ( (Nothing :> Nil)
+          ++ fmap (Just . fromIntegral . ord) raw
+          ++ (Just 4 :> Nothing :> Nil)
+      )
+
 data InOut a b = InOut
   { input :: a,
     output :: b
   }
   deriving stock (Generic, Eq)
   deriving anyclass (NFData, NFDataX, ShowX, ToWave)
+
+copyWavedromDedup :: IO ()
+copyWavedromDedup =
+  let en = enableGen
+      clk = tbClockGen (False <$ out)
+      rst = resetGen :: Reset System
+      inputSignal = stimuliGenerator clk rst (Just (More (0 :: Unsigned 16)) :>  Just (More 518) :> Just (More 518) :>  Just (More 1) :> Just (More 0) :> Just Done :> Nothing :> Nil)
+      out = fmap ShowWave (exposeClockResetEnable (deduplicate (0 :: Unsigned 16)) clk rst en inputSignal)
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
+
 
 copyWavedrom :: IO ()
 copyWavedrom =
@@ -332,6 +364,15 @@ copyWavedrom =
       inputSignal = stimuliGenerator clk rst testInputCore
       out = InOut <$> fmap BitsWave inputSignal <*> fmap ShowWave (exposeClockResetEnable runCore clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
+
+copyWavedrom2 :: IO ()
+copyWavedrom2 =
+  let en = enableGen
+      clk = tbClockGen (False <$ out)
+      rst = resetGen :: Reset System
+      inputSignal = stimuliGenerator clk rst testInputCore2
+      out = InOut <$> fmap BitsWave inputSignal <*> fmap ShowWave (exposeClockResetEnable runCore clk rst en inputSignal)
+   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 150 "" out
 
 testBench :: Signal Alchitry3 Bool
 testBench =
