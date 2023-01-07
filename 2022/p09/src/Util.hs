@@ -19,7 +19,7 @@ import GHC.TypeNats (type (+))
 data MoreOrDone a
   = More a
   | Done
-  deriving stock (Generic, Show, Eq, Ord)
+  deriving stock (Generic, Show, Eq, Ord, Functor)
   deriving anyclass (NFData, NFDataX, ShowX, BitPack)
 
 -- Let's us arbitrarily group the number of times the state machine executes in

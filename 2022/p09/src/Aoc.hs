@@ -105,18 +105,27 @@ data FollowState n = FollowState
   deriving anyclass (NFData, NFDataX)
 
 followT ::
+  Mealy
+    (V2 3)
+    (MoreOrDone (V2 3))
+    (MoreOrDone (V2 3))
+followT _ Done = (mempty, Done)
+followT tailToHead (More v) =
+  let headMoved = tailToHead <> v
+      toFollow = followingVector headMoved
+      tailToHead' = invert toFollow <> headMoved
+   in (tailToHead', More toFollow)
+
+trackTailT ::
   KnownNat n =>
   Mealy
-    (FollowState n)
-    (MoreOrDone (V2 2))
-    (Maybe (MoreOrDone (V2 n)))
-followT _ Done = (FollowState {originToTail = mempty, tailToHead = mempty}, Just Done)
-followT FollowState {originToTail, tailToHead} (More v) =
-  let headMoved = tailToHead <> fmap (fmap (fmap resize)) v
-      toFollow = followingVector headMoved
-      originToTail' = originToTail <> fmap (fmap (fmap resize)) toFollow
-      tailToHead' = invert toFollow <> headMoved
-   in (FollowState {originToTail = originToTail', tailToHead = tailToHead'}, Just (More originToTail'))
+    (V2 n)
+    (MoreOrDone (V2 3))
+    (MoreOrDone (V2 n))
+trackTailT _ Done = (mempty, Done)
+trackTailT originToTail (More toFollow) =
+  let originToTail' = originToTail <> fmap (fmap (fmap resize)) toFollow
+   in (originToTail', More originToTail')
 
 -- TODO: There is definitely not enough RAM for this.
 --
@@ -214,8 +223,9 @@ runCore1 mBytes =
       selectedQuadrant = 3
 
       parsed = join <$> mealy (adapt parseT) StartOfLine mBytes
-      singleInstructions = mealy expandT Nothing parsed
-      tailPositions = join <$> mealy (adapt followT) (FollowState {originToTail = mempty :: V2 9, tailToHead = mempty}) singleInstructions
+      singleInstructions = fmap (fmap (fmap (fmap (fmap (fmap resize))))) $ mealy expandT Nothing parsed
+      tailMoves = mealy (adapt followT) mempty singleInstructions
+      tailPositions = mealy (adapt trackTailT) mempty tailMoves
       tailPositionsInQuadrant = fmap ((=<<) (selectQuadrant selectedQuadrant)) tailPositions
       uniqueTailPositions = deduplicate 0 tailPositionsInQuadrant
       out = join <$> mealy (adapt countEventsT) 0 uniqueTailPositions
