@@ -184,8 +184,9 @@ deduplicate defaultRead mA =
       -- this last bit (but it's still not really enough).
       --
       -- If we use the full 16b width and then manually mask, this lets us
-      -- reset the RAM 16x faster.  We could go even faster by allowing
-      -- each block to write simultaneously.
+      -- reset the RAM 16x faster.  And if we use a 256b width, we can reset
+      -- all addresses across 16 block RAMs simultaneously, so it only takes
+      -- 256 cycles to reset them all..
       ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 65536) False) (pack <$> readAddr) (fmap (fmap (\(a, b) -> (pack a, b))) write)
    in out
 
