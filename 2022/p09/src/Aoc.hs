@@ -17,6 +17,7 @@ import Data.Bits (shiftR)
 import Data.ByteString.UTF8 ()
 import Data.Char (chr, ord)
 import Data.Group (Group (invert))
+import qualified Data.List as List
 import Data.Monoid (Sum (..))
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
@@ -223,9 +224,20 @@ runCore1 mBytes =
   let -- Hack to manually run 4 times, testing a different quadrant each time
       selectedQuadrant = 3
 
+      -- Hack because since we don't even have enough RAM to solve part 1, we
+      -- have to recompile specifically for part 2 as well.
+      ropeLength = 9
+
       parsed = join <$> mealy (adapt parseT) StartOfLine mBytes
       singleInstructions = fmap (fmap (fmap (fmap (fmap (fmap resize))))) $ mealy expandT Nothing parsed
-      tailMoves = mealy (adapt followT) mempty singleInstructions
+      tailMoves =
+        List.foldl1
+          (.)
+          ( List.replicate
+              ropeLength
+              (register Nothing . mealy (adapt followT) mempty)
+          )
+          singleInstructions
       tailPositions = mealy (adapt trackTailT) mempty tailMoves
       tailPositionsInQuadrant = fmap ((=<<) (selectQuadrant selectedQuadrant)) tailPositions
       uniqueTailPositions = deduplicate 0 tailPositionsInQuadrant
