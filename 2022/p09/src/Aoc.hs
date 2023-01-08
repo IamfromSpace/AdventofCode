@@ -5,7 +5,7 @@ module Aoc where
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
-import Clash.Prelude (Bit, BitPack, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, pack, register, replicate, resetGen, resize, unbundle, vName, vPeriod, vResetPolarity, (!), replaceBit)
+import Clash.Prelude (Bit, BitSize, BitPack, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, pack, register, replicate, resetGen, resize, unbundle, vName, vPeriod, vResetPolarity, (!), replaceBit, split)
 import Clash.Prelude.BlockRam (ResetStrategy (ClearOnReset), blockRam1, readNew)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
 import qualified Clash.Sized.Vector as Vector
@@ -22,6 +22,7 @@ import Data.Monoid (Sum (..))
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
+import GHC.TypeLits (type (+), type (^))
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
 import Util (BcdOrControl (..), Mealy, MoreOrDone (..), Vector (..), adapt, awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
@@ -153,37 +154,26 @@ trackTailT originToTail (More toFollow) =
 --
 -- TODO: This only works exactly once!
 -- Receipt of a Done needs to reset all positions
---
--- TODO: Type params for this for arbitrary depth and width
-deduplicateT :: BitPack a => a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), BitVector 256) (Maybe (MoreOrDone a), BitVector 8, Maybe (BitVector 8, BitVector 256))
+deduplicateT :: KnownNat width => BitPack a => BitSize a ~ (depth + width) => a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), BitVector (2 ^ width)) (Maybe (MoreOrDone a), BitVector depth, Maybe (BitVector depth, BitVector (2 ^ width)))
 deduplicateT defaultRead prev (next, prevWasPresentBv) =
-  let output =
-        case prev of
-          Just (More x) ->
-            -- take the bottom bits to get the BV address
-            let index = resize (pack x) :: BitVector 8
-            in if (prevWasPresentBv ! index) == 1 then
-              Nothing
-            else
-              prev
-          _ -> prev
+  let
       readAddr =
         let v = case next of
               Just (More x) -> x
               _ -> defaultRead
         -- take the top bits to get the RAM address
-        in resize (shiftR (pack v) 8) :: BitVector 8
-      mWrite =
+        in fst $ split v
+      (output, mWrite) =
         case prev of
           Just (More x) ->
-            -- TODO: BitPack.split is probably the way to go and should do some
-            -- type wizardry for us.
-            let packed = pack x
-                index = resize packed :: BitVector 8
+            let (ramAddr, index) = split x
+                out = if (prevWasPresentBv ! index) == 1 then
+                              Nothing
+                            else
+                              prev
                 bv' = replaceBit index 1 prevWasPresentBv
-                ramAddr = resize (shiftR packed 8) :: BitVector 8
-             in Just (ramAddr, bv')
-          _ -> Nothing
+             in (out, Just (ramAddr, bv'))
+          _ -> (prev, Nothing)
   in
   ( next,
     ( output,
@@ -196,10 +186,11 @@ countEventsT :: Mealy (Unsigned 64) (MoreOrDone a) (Maybe (Unsigned 64))
 countEventsT acc Done = (0, Just acc)
 countEventsT acc (More _) = (acc + 1, Nothing)
 
-deduplicate :: HiddenClockResetEnable dom => BitPack a => NFDataX a => a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
+-- TODO: Type params for this for arbitrary depth and width
+deduplicate :: HiddenClockResetEnable dom => BitPack a => BitSize a ~ 16 => NFDataX a => a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
 deduplicate defaultRead mA =
-  let (out, readAddr, write) = unbundle $ mealy (deduplicateT defaultRead) Nothing (bundle (mA, ramOut))
-      ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 256) 0) readAddr write
+  let (out, readAddr, write) = unbundle $ mealy (deduplicateT defaultRead) Nothing (bundle (mA, ramOut :: Signal _ (BitVector 256)))
+      ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 256) 0) (readAddr :: Signal _ (BitVector 8)) (write :: Signal _ (Maybe (BitVector 8, BitVector 256)))
    in out
 
 biggestBoundT ::
