@@ -129,6 +129,20 @@ trackTailT originToTail (More toFollow) =
   let originToTail' = originToTail <> fmap (fmap (fmap resize)) toFollow
    in (originToTail', More originToTail')
 
+data DedupState n a
+  = Idle
+  -- ^ No previous input to dedup
+  | Running a
+  -- ^ Previous input is being checked
+  | Flushing
+  -- ^ The current input is Done, but we have a current value we're checking,
+  -- so we need two clock cycles to output it and Done.
+  -- Possibly this should just be a flag in Clearing to be more efficient.
+  | Clearing (BitVector n)
+  -- ^ Clearing RAM, current address being cleared
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData, NFDataX)
+
 -- TODO: There is definitely not enough RAM for this.
 --
 -- Something like a HashSet/trie requires us to store the deduped value itelf,
@@ -152,28 +166,49 @@ trackTailT originToTail (More toFollow) =
 -- shrink to 5b since we don't ever actually see both digits utilized (no
 -- iteration count is over 20).  That's as low as 18kb.
 --
--- TODO: This only works exactly once!
--- Receipt of a Done needs to reset all positions
-deduplicateT :: KnownNat width => BitPack a => BitSize a ~ (depth + width) => SNat (2 ^ depth) -> a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), BitVector (2 ^ width)) (Maybe (MoreOrDone a), BitVector depth, Maybe (BitVector depth, BitVector (2 ^ width)))
-deduplicateT SNat defaultRead prev (next, prevWasPresentBv) =
+-- TODO: Ready signal while clearing
+deduplicateT ::
+  KnownNat width =>
+  BitPack a =>
+  BitSize a ~ (depth + width) =>
+  SNat (2 ^ depth) ->
+  a ->
+  Mealy
+    (DedupState depth a)
+    (Maybe (MoreOrDone a), BitVector (2 ^ width))
+    (Maybe (MoreOrDone a), BitVector depth, Maybe (BitVector depth, BitVector (2 ^ width)))
+deduplicateT SNat defaultRead Flushing _ =
+  (Clearing maxBound, (Just Done, fst $ split defaultRead, Nothing))
+deduplicateT SNat defaultRead (Clearing n) _ =
+  ( if n == minBound then Idle else Clearing (n - 1)
+  , (Nothing, fst $ split defaultRead, Just (n, 0))
+  )
+deduplicateT SNat defaultRead Idle (Nothing, _) =
+  (Idle, (Nothing, fst $ split defaultRead, Nothing))
+deduplicateT SNat defaultRead Idle (Just Done, _) =
+  (Clearing maxBound, (Just Done, fst $ split defaultRead, Nothing))
+deduplicateT SNat _ Idle (Just (More next), _) =
+  (Running next, (Nothing, fst $ split next, Nothing))
+deduplicateT SNat defaultRead (Running prev) (mNext, prevWasPresentBv) =
   let
       readAddr =
-        let v = case next of
+        let v = case mNext of
               Just (More x) -> x
               _ -> defaultRead
         -- take the top bits to get the RAM address
         in fst $ split v
-      (output, mWrite) =
-        case prev of
-          Just (More x) ->
-            let (ramAddr, index) = split x
-                out = if (prevWasPresentBv ! index) == 1 then
-                              Nothing
-                            else
-                              prev
-                bv' = replaceBit index 1 prevWasPresentBv
-             in (out, Just (ramAddr, bv'))
-          _ -> (prev, Nothing)
+      next =
+        case mNext of
+          Nothing -> Idle
+          Just (More x) -> Running x
+          Just Done -> Flushing
+      (ramAddr, index) = split prev
+      output = if (prevWasPresentBv ! index) == 1 then
+                    Nothing
+                  else
+                    Just (More prev)
+      bv' = replaceBit index 1 prevWasPresentBv
+      mWrite = Just (ramAddr, bv')
   in
   ( next,
     ( output,
@@ -188,7 +223,7 @@ countEventsT acc (More _) = (acc + 1, Nothing)
 
 deduplicate :: HiddenClockResetEnable dom => KnownNat depth => BitPack a => BitSize a ~ (depth + width) => NFDataX a => SNat (2 ^ depth) -> a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
 deduplicate depth defaultRead mA =
-  let (out, readAddr, write) = unbundle $ mealy (deduplicateT depth defaultRead) Nothing (bundle (mA, ramOut))
+  let (out, readAddr, write) = unbundle $ mealy (deduplicateT depth defaultRead) Idle (bundle (mA, ramOut))
       ramOut = readNew (blockRam1 ClearOnReset depth 0) readAddr write
    in out
 
@@ -341,7 +376,7 @@ copyWavedromDedup =
   let en = enableGen
       clk = tbClockGen (False <$ out)
       rst = resetGen :: Reset System
-      inputSignal = stimuliGenerator clk rst (Just (More (0 :: Unsigned 16)) :>  Just (More 518) :> Just (More 518) :>  Just (More 1) :> Just (More 0) :> Just Done :> Nothing :> Nil)
+      inputSignal = stimuliGenerator clk rst (Nothing :> Nothing :> Nothing :> Nothing :> Just (More (0 :: Unsigned 16)) :>  Just (More 518) :> Just (More 518) :>  Just (More 1) :> Just (More 0) :> Just Done :> Nothing :> Nil)
       out = fmap ShowWave (exposeClockResetEnable (deduplicate (SNat :: SNat 256) (0 :: Unsigned 16)) clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
 
