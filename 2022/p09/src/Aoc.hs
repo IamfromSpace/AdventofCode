@@ -55,6 +55,7 @@ parseT StartOfLine 85 =
 parseT StartOfLine 68 =
   -- D
   (Digits (Vector (0 :> -1 :> Nil)) 0, Nothing)
+parseT StartOfLine 10 = (StartOfLine, Nothing)
 parseT StartOfLine 4 = (StartOfLine, Just Done)
 parseT StartOfLine _ = error "bad direction!"
 parseT s@(Digits _ _) 32 = (s, Nothing)
