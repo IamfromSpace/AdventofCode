@@ -154,8 +154,8 @@ trackTailT originToTail (More toFollow) =
 --
 -- TODO: This only works exactly once!
 -- Receipt of a Done needs to reset all positions
-deduplicateT :: KnownNat width => BitPack a => BitSize a ~ (depth + width) => a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), BitVector (2 ^ width)) (Maybe (MoreOrDone a), BitVector depth, Maybe (BitVector depth, BitVector (2 ^ width)))
-deduplicateT defaultRead prev (next, prevWasPresentBv) =
+deduplicateT :: KnownNat width => BitPack a => BitSize a ~ (depth + width) => SNat (2 ^ depth) -> a -> Mealy (Maybe (MoreOrDone a)) (Maybe (MoreOrDone a), BitVector (2 ^ width)) (Maybe (MoreOrDone a), BitVector depth, Maybe (BitVector depth, BitVector (2 ^ width)))
+deduplicateT SNat defaultRead prev (next, prevWasPresentBv) =
   let
       readAddr =
         let v = case next of
@@ -186,11 +186,10 @@ countEventsT :: Mealy (Unsigned 64) (MoreOrDone a) (Maybe (Unsigned 64))
 countEventsT acc Done = (0, Just acc)
 countEventsT acc (More _) = (acc + 1, Nothing)
 
--- TODO: Type params for this for arbitrary depth and width
-deduplicate :: HiddenClockResetEnable dom => BitPack a => BitSize a ~ 16 => NFDataX a => a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
-deduplicate defaultRead mA =
-  let (out, readAddr, write) = unbundle $ mealy (deduplicateT defaultRead) Nothing (bundle (mA, ramOut :: Signal _ (BitVector 256)))
-      ramOut = readNew (blockRam1 ClearOnReset (SNat :: SNat 256) 0) (readAddr :: Signal _ (BitVector 8)) (write :: Signal _ (Maybe (BitVector 8, BitVector 256)))
+deduplicate :: HiddenClockResetEnable dom => KnownNat depth => BitPack a => BitSize a ~ (depth + width) => NFDataX a => SNat (2 ^ depth) -> a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
+deduplicate depth defaultRead mA =
+  let (out, readAddr, write) = unbundle $ mealy (deduplicateT depth defaultRead) Nothing (bundle (mA, ramOut))
+      ramOut = readNew (blockRam1 ClearOnReset depth 0) readAddr write
    in out
 
 biggestBoundT ::
@@ -242,7 +241,7 @@ runCore1 mBytes =
           singleInstructions
       tailPositions = mealy (adapt trackTailT) mempty tailMoves
       tailPositionsInQuadrant = fmap ((=<<) (selectQuadrant selectedQuadrant)) tailPositions
-      uniqueTailPositions = deduplicate 0 tailPositionsInQuadrant
+      uniqueTailPositions = deduplicate (SNat :: SNat 256) 0 tailPositionsInQuadrant
       out = join <$> mealy (adapt countEventsT) 0 uniqueTailPositions
       -- Figure out how many (raw) events exceed our 1/2 max RAM
       -- tooBig = fmap ((=<<) isOutsideOf8Bit) tailPositions
@@ -343,7 +342,7 @@ copyWavedromDedup =
       clk = tbClockGen (False <$ out)
       rst = resetGen :: Reset System
       inputSignal = stimuliGenerator clk rst (Just (More (0 :: Unsigned 16)) :>  Just (More 518) :> Just (More 518) :>  Just (More 1) :> Just (More 0) :> Just Done :> Nothing :> Nil)
-      out = fmap ShowWave (exposeClockResetEnable (deduplicate (0 :: Unsigned 16)) clk rst en inputSignal)
+      out = fmap ShowWave (exposeClockResetEnable (deduplicate (SNat :: SNat 256) (0 :: Unsigned 16)) clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
 
 
