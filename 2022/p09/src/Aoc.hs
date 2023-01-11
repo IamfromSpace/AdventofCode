@@ -5,8 +5,7 @@ module Aoc where
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
-import Clash.Prelude (Bit, BitSize, BitPack, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, pack, register, replicate, resetGen, resize, unbundle, vName, vPeriod, vResetPolarity, (!), replaceBit, split)
-import Clash.Prelude.BlockRam (ResetStrategy (ClearOnReset), blockRam1, readNew)
+import Clash.Prelude (Bit, BitPack, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, KnownNat, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, pack, register, replicate, resetGen, resize, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
 import qualified Clash.Sized.Vector as Vector
 import Clash.WaveDrom (BitsWave (BitsWave), ShowWave (ShowWave), ToWave, render, wavedromWithClock)
@@ -22,10 +21,9 @@ import Data.Monoid (Sum (..))
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TLE
 import GHC.Generics (Generic)
-import GHC.TypeLits (type (+), type (^))
 import Ice40.Pll.Pad (pllPadPrim)
 import System.Hclip (setClipboard)
-import Util (BcdOrControl (..), Mealy, MoreOrDone (..), Vector (..), adapt, awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, delayBufferVecT)
+import Util (BcdOrControl (..), Mealy, MoreOrDone (..), Vector (..), adapt, awaitBothT, bcd64T, bcdOrControlToAscii, blankLeadingZeros, charToUartRx, deduplicate, delayBufferVecT)
 import Prelude hiding (foldr, init, lookup, map, repeat, replicate, (!!), (++))
 
 createDomain (knownVDomain @System){vName="Alchitry", vResetPolarity=ActiveLow, vPeriod=10000}
@@ -130,20 +128,6 @@ trackTailT originToTail (More toFollow) =
   let originToTail' = originToTail <> fmap (fmap (fmap resize)) toFollow
    in (originToTail', More originToTail')
 
-data DedupState n a
-  = Idle
-  -- ^ No previous input to dedup
-  | Running a
-  -- ^ Previous input is being checked
-  | Flushing
-  -- ^ The current input is Done, but we have a current value we're checking,
-  -- so we need two clock cycles to output it and Done.
-  -- Possibly this should just be a flag in Clearing to be more efficient.
-  | Clearing (BitVector n)
-  -- ^ Clearing RAM, current address being cleared
-  deriving stock (Generic, Show, Eq, Ord)
-  deriving anyclass (NFData, NFDataX)
-
 -- TODO: There is definitely not enough RAM for this.
 --
 -- Something like a HashSet/trie requires us to store the deduped value itelf,
@@ -166,67 +150,10 @@ data DedupState n a
 -- for the iteration count and 2b per vector dimension.  That 7b could even
 -- shrink to 5b since we don't ever actually see both digits utilized (no
 -- iteration count is over 20).  That's as low as 18kb.
---
--- TODO: Ready signal while clearing
-deduplicateT ::
-  KnownNat width =>
-  BitPack a =>
-  BitSize a ~ (depth + width) =>
-  SNat (2 ^ depth) ->
-  a ->
-  Mealy
-    (DedupState depth a)
-    (Maybe (MoreOrDone a), BitVector (2 ^ width))
-    (Maybe (MoreOrDone a), BitVector depth, Maybe (BitVector depth, BitVector (2 ^ width)))
-deduplicateT SNat defaultRead Flushing _ =
-  (Clearing maxBound, (Just Done, fst $ split defaultRead, Nothing))
-deduplicateT SNat defaultRead (Clearing n) _ =
-  ( if n == minBound then Idle else Clearing (n - 1)
-  , (Nothing, fst $ split defaultRead, Just (n, 0))
-  )
-deduplicateT SNat defaultRead Idle (Nothing, _) =
-  (Idle, (Nothing, fst $ split defaultRead, Nothing))
-deduplicateT SNat defaultRead Idle (Just Done, _) =
-  (Clearing maxBound, (Just Done, fst $ split defaultRead, Nothing))
-deduplicateT SNat _ Idle (Just (More next), _) =
-  (Running next, (Nothing, fst $ split next, Nothing))
-deduplicateT SNat defaultRead (Running prev) (mNext, prevWasPresentBv) =
-  let
-      readAddr =
-        let v = case mNext of
-              Just (More x) -> x
-              _ -> defaultRead
-        -- take the top bits to get the RAM address
-        in fst $ split v
-      next =
-        case mNext of
-          Nothing -> Idle
-          Just (More x) -> Running x
-          Just Done -> Flushing
-      (ramAddr, index) = split prev
-      output = if (prevWasPresentBv ! index) == 1 then
-                    Nothing
-                  else
-                    Just (More prev)
-      bv' = replaceBit index 1 prevWasPresentBv
-      mWrite = Just (ramAddr, bv')
-  in
-  ( next,
-    ( output,
-      readAddr,
-      mWrite
-    )
-  )
 
 countEventsT :: Mealy (Unsigned 64) (MoreOrDone a) (Maybe (Unsigned 64))
 countEventsT acc Done = (0, Just acc)
 countEventsT acc (More _) = (acc + 1, Nothing)
-
-deduplicate :: HiddenClockResetEnable dom => KnownNat depth => BitPack a => BitSize a ~ (depth + width) => NFDataX a => SNat (2 ^ depth) -> a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
-deduplicate depth defaultRead mA =
-  let (out, readAddr, write) = unbundle $ mealy (deduplicateT depth defaultRead) Idle (bundle (mA, ramOut))
-      ramOut = readNew (blockRam1 ClearOnReset depth 0) readAddr write
-   in out
 
 biggestBoundT ::
   KnownNat n =>

@@ -4,7 +4,8 @@
 module Util where
 
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
-import Clash.Prelude (Bit, BitPack, BitVector, CLog, Char, Eq, Functor, Generic, Int, KnownNat, Maybe (..), Monoid, Ord, SNat (..), Semigroup, Show, Traversable (..), Unsigned, Vec, fmap, fromIntegral, maybe, mempty, pack, repeat, replicate, snatToNum, subSNat, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<>), (<|>), (==))
+import Clash.Prelude (Bit, BitPack, BitSize, BitVector, CLog, Char, Eq, Functor, Generic, HiddenClockResetEnable, Int, KnownNat, Maybe (..), Monoid, Ord, Signal, SNat (..), Semigroup, Show, Traversable (..), Unsigned, Vec, bundle, fmap, fromIntegral, fst, maxBound, maybe, mealy, mempty, minBound, pack, repeat, replaceBit, replicate, snatToNum, split, subSNat, unbundle, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<>), (<|>), (==))
+import Clash.Prelude.BlockRam (ResetStrategy (ClearOnReset), blockRam1, readNew)
 import qualified Clash.Sized.Vector as Vector
 import Clash.XException (NFDataX, ShowX)
 import Control.DeepSeq (NFData)
@@ -14,7 +15,7 @@ import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
-import GHC.TypeNats (type (+))
+import GHC.TypeNats (type (+), type (^))
 
 data MoreOrDone a
   = More a
@@ -159,3 +160,74 @@ instance (KnownNat n, Monoid a) => Monoid (Vector (Vec n a)) where
 
 instance (KnownNat n, Group a) => Group (Vector (Vec n a)) where
   invert (Vector v) = Vector $ fmap invert v
+
+data DedupState n a
+  = Idle
+  -- ^ No previous input to dedup
+  | Running a
+  -- ^ Previous input is being checked
+  | Flushing
+  -- ^ The current input is Done, but we have a current value we're checking,
+  -- so we need two clock cycles to output it and Done.
+  -- Possibly this should just be a flag in Clearing to be more efficient.
+  | Clearing (BitVector n)
+  -- ^ Clearing RAM, current address being cleared
+  deriving stock (Generic, Show, Eq, Ord)
+  deriving anyclass (NFData, NFDataX)
+
+-- TODO: Ready signal while clearing
+deduplicateT ::
+  KnownNat width =>
+  BitPack a =>
+  BitSize a ~ (depth + width) =>
+  SNat (2 ^ depth) ->
+  a ->
+  Mealy
+    (DedupState depth a)
+    (Maybe (MoreOrDone a), BitVector (2 ^ width))
+    (Maybe (MoreOrDone a), BitVector depth, Maybe (BitVector depth, BitVector (2 ^ width)))
+deduplicateT SNat defaultRead Flushing _ =
+  (Clearing maxBound, (Just Done, fst $ split defaultRead, Nothing))
+deduplicateT SNat defaultRead (Clearing n) _ =
+  ( if n == minBound then Idle else Clearing (n - 1)
+  , (Nothing, fst $ split defaultRead, Just (n, 0))
+  )
+deduplicateT SNat defaultRead Idle (Nothing, _) =
+  (Idle, (Nothing, fst $ split defaultRead, Nothing))
+deduplicateT SNat defaultRead Idle (Just Done, _) =
+  (Clearing maxBound, (Just Done, fst $ split defaultRead, Nothing))
+deduplicateT SNat _ Idle (Just (More next), _) =
+  (Running next, (Nothing, fst $ split next, Nothing))
+deduplicateT SNat defaultRead (Running prev) (mNext, prevWasPresentBv) =
+  let
+      readAddr =
+        let v = case mNext of
+              Just (More x) -> x
+              _ -> defaultRead
+        -- take the top bits to get the RAM address
+        in fst $ split v
+      next =
+        case mNext of
+          Nothing -> Idle
+          Just (More x) -> Running x
+          Just Done -> Flushing
+      (ramAddr, index) = split prev
+      output = if (prevWasPresentBv ! index) == 1 then
+                    Nothing
+                  else
+                    Just (More prev)
+      bv' = replaceBit index 1 prevWasPresentBv
+      mWrite = Just (ramAddr, bv')
+  in
+  ( next,
+    ( output,
+      readAddr,
+      mWrite
+    )
+  )
+
+deduplicate :: HiddenClockResetEnable dom => KnownNat depth => BitPack a => BitSize a ~ (depth + width) => NFDataX a => SNat (2 ^ depth) -> a -> Signal dom (Maybe (MoreOrDone a)) -> Signal dom (Maybe (MoreOrDone a))
+deduplicate depth defaultRead mA =
+  let (out, readAddr, write) = unbundle $ mealy (deduplicateT depth defaultRead) Idle (bundle (mA, ramOut))
+      ramOut = readNew (blockRam1 ClearOnReset depth 0) readAddr write
+   in out
