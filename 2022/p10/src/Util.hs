@@ -4,7 +4,7 @@
 module Util where
 
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
-import Clash.Prelude (Bit, BitPack, BitSize, BitVector, CLog, Char, Eq, Functor, Generic, HiddenClockResetEnable, Int, KnownNat, Maybe (..), Monoid, Ord, Signal, SNat (..), Semigroup, Show, Traversable (..), Unsigned, Vec, bundle, fmap, fromIntegral, fst, maxBound, maybe, mealy, mempty, minBound, pack, repeat, replaceBit, replicate, snatToNum, split, subSNat, unbundle, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<>), (<|>), (==))
+import Clash.Prelude (Bit, BitPack, BitSize, BitVector, CLog, Char, Eq, Functor, Generic, HiddenClockResetEnable, Index, Int, KnownNat, Maybe (..), Monoid, Ord, Signal, SNat (..), Semigroup, Show, Traversable (..), Unsigned, Vec, bundle, fmap, fromIntegral, fst, maxBound, maybe, mealy, mempty, minBound, pack, repeat, replaceBit, replicate, snatToNum, split, subSNat, unbundle, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<>), (<|>), (==))
 import Clash.Prelude.BlockRam (ResetStrategy (ClearOnReset), blockRam1, readNew)
 import qualified Clash.Sized.Vector as Vector
 import Clash.XException (NFDataX, ShowX)
@@ -105,19 +105,19 @@ charToUartRx char =
     ++ replicate (SNat :: SNat 16) (charToBit char 7)
     ++ replicate (SNat :: SNat 16) 1
 
-bcd64T ::
-  Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)) ->
-  Maybe (Unsigned 64, Unsigned 64) ->
-  ( Maybe (Unsigned 64, Unsigned 64, Unsigned 6, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)),
-    Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4))
-  )
-bcd64T Nothing Nothing =
+bcdNT ::
+  KnownNat n =>
+  Mealy
+    (Maybe (Unsigned n, Unsigned n, Index n, Vec (CLog 10 (2^n)) (Unsigned 4), Vec (CLog 10 (2^n)) (Unsigned 4)))
+    (Maybe (Unsigned n, Unsigned n))
+    (Maybe (Vec (CLog 10 (2^n)) (Unsigned 4), Vec (CLog 10 (2^n)) (Unsigned 4)))
+bcdNT Nothing Nothing =
   -- Nothing in progress, no new values to convert
   (Nothing, Nothing)
-bcd64T Nothing (Just (a, b)) =
+bcdNT Nothing (Just (a, b)) =
   -- New values to convert
-  (Just (a, b, 63, repeat 0, repeat 0), Nothing)
-bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
+  (Just (a, b, maxBound, repeat 0, repeat 0), Nothing)
+bcdNT (Just (a, b, n, aBcd, bBcd)) _ =
   -- Convert values in progress
   let aBcd' = convertStep (a ! n) aBcd
       bBcd' = convertStep (b ! n) bBcd
@@ -125,6 +125,13 @@ bcd64T (Just (a, b, n, aBcd, bBcd)) _ =
    in if done
         then (Nothing, Just (aBcd', bBcd'))
         else (Just (a, b, n - 1, aBcd', bBcd'), Nothing)
+
+bcd64T ::
+  Mealy
+    (Maybe (Unsigned 64, Unsigned 64, Index 64, Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)))
+    (Maybe (Unsigned 64, Unsigned 64))
+    (Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)))
+bcd64T = bcdNT
 
 data BcdOrControl
   = Bcd (Unsigned 4)
