@@ -4,7 +4,7 @@
 module Util where
 
 import Clash.Arithmetic.BCD (bcdToAscii, convertStep)
-import Clash.Prelude (Bit, BitPack, BitSize, BitVector, CLog, Char, Eq, Functor, Generic, HiddenClockResetEnable, Index, Int, KnownNat, Maybe (..), Monoid, Ord, Signal, SNat (..), Semigroup, Show, Traversable (..), Unsigned, Vec, bundle, fmap, fromIntegral, fst, maxBound, maybe, mealy, mempty, minBound, pack, repeat, replaceBit, replicate, snatToNum, split, subSNat, unbundle, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<>), (<|>), (==))
+import Clash.Prelude (Bit, BitPack, BitSize, BitVector, Bool, CLog, Char, Eq, Functor, Generic, HiddenClockResetEnable, Index, Int, KnownNat, Maybe (..), Monoid, Ord, Signal, Signed, SNat (..), Semigroup, Show, Traversable (..), Unsigned, Vec, abs, bundle, fmap, fromIntegral, fst, maxBound, maybe, mealy, mempty, minBound, pack, repeat, replaceBit, replicate, signum, snatToNum, snd, split, subSNat, unbundle, undefined, (!), (!!), ($), (&&), (+), (++), (-), (/=), (<), (<$>), (<>), (<|>), (==))
 import Clash.Prelude.BlockRam (ResetStrategy (ClearOnReset), blockRam1, readNew)
 import qualified Clash.Sized.Vector as Vector
 import Clash.XException (NFDataX, ShowX)
@@ -133,10 +133,42 @@ bcd64T ::
     (Maybe (Vec 20 (Unsigned 4), Vec 20 (Unsigned 4)))
 bcd64T = bcdNT
 
+bcd1NT ::
+  KnownNat n =>
+  Mealy
+    (Maybe (Unsigned n, Index n, Vec (CLog 10 (2^n)) (Unsigned 4)))
+    (Maybe (Unsigned n))
+    (Maybe (Vec (CLog 10 (2^n)) (Unsigned 4)))
+bcd1NT Nothing Nothing =
+  -- Nothing in progress, no new values to convert
+  (Nothing, Nothing)
+bcd1NT Nothing (Just x) =
+  -- New values to convert
+  (Just (x, maxBound, repeat 0), Nothing)
+bcd1NT (Just (x, n, bcd)) _ =
+  -- Convert values in progress
+  let bcd' = convertStep (x ! n) bcd
+      done = n == 0
+   in if done
+        then (Nothing, Just bcd')
+        else (Just (x, n - 1, bcd'), Nothing)
+
+bcd1SignedN :: KnownNat n => HiddenClockResetEnable dom => Signal dom (Maybe (Signed n)) -> Signal dom (Maybe (Bool, Vec (CLog 10 (2^n)) (Unsigned 4)))
+bcd1SignedN signed =
+  let
+    signSeparated = fmap (fmap (\x -> (signum x == -1, fromIntegral (abs x)))) signed
+    isNegative = fmap (fmap fst) signSeparated
+    magnitude = fmap (fmap snd) signSeparated
+    bcd = mealy bcd1NT Nothing magnitude
+    out = mealy awaitBothT (Nothing, Nothing) (bundle (isNegative, bcd))
+  in
+    out
+
 data BcdOrControl
   = Bcd (Unsigned 4)
   | Return
   | Eot
+  | Negate
   deriving stock (Generic, Show, Eq, Ord)
   deriving anyclass (NFData, NFDataX, ShowX)
 
@@ -152,6 +184,7 @@ bcdOrControlToAscii x =
     Bcd bcd -> bcdToAscii $ pack bcd
     Return -> 10
     Eot -> 4
+    Negate -> 45
 
 type Mealy s a b = s -> a -> (s, b)
 
