@@ -5,6 +5,7 @@ module Aoc where
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
+import Clash.Num.Wrapping (Wrapping)
 import Clash.Prelude (Bit, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, Index, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, register, replicate, resetGen, resize, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
 import qualified Clash.Sized.Vector as Vector
@@ -58,23 +59,20 @@ data Inst
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (NFData, NFDataX, ShowX)
 
-outputCycles :: Vec 6 (Unsigned 32)
-outputCycles = 20 :> 60 :> 100 :> 140 :> 180 :> 220 :> Nil
-
 -- Need to know when done
-executeT :: Mealy (Unsigned 32, Signed 32) Inst (Maybe (Signed 32))
-executeT (cycleCount, x) Noop =
-  ( (cycleCount + 1, x),
-    if cycleCount `elem` outputCycles
+executeT :: Mealy (Unsigned 32, Signed 32, Wrapping (Index 40)) Inst (Maybe (Signed 32))
+executeT (cycleCount, x, n) Noop =
+  ( (cycleCount + 1, x, n + 1),
+    if n == maxBound
       then Just (fromIntegral cycleCount * x)
       else Nothing
   )
-executeT (cycleCount, x) (Addx offset) =
-  ( (cycleCount + 2, x + resize offset),
-    if cycleCount `elem` outputCycles
+executeT (cycleCount, x, n) (Addx offset) =
+  ( (cycleCount + 2, x + resize offset, n + 2),
+    if n == maxBound
       then Just (fromIntegral cycleCount * x)
       else
-        if cycleCount + 1 `elem` outputCycles
+        if n + 1 == maxBound
           then Just (fromIntegral (cycleCount + 1) * x)
           else Nothing
   )
@@ -90,7 +88,7 @@ runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Si
 runCore1 mBytes =
   let mInsts = join <$> mealy (adapt parseT) StartOfLine mBytes
       mInsts' = register Nothing mInsts
-      mSigStrengths = join <$> mealy (adapt executeT) (1, 1) mInsts'
+      mSigStrengths = join <$> mealy (adapt executeT) (1, 1, 20) mInsts'
       mSigStrengths' = register Nothing mSigStrengths
       out = join <$> mealy (adapt sum6T) (0, 0) mSigStrengths'
    in out
@@ -165,7 +163,7 @@ copyWavedromExecute =
       clk = tbClockGen (False <$ out)
       rst = resetGen :: Reset System
       inputSignal = stimuliGenerator clk rst (Addx 15 :> Addx (-11) :> Addx 6 :> Addx (-3) :> Addx 5 :> Addx (-1) :> Addx (-8) :> Addx 13 :> Addx 4 :> Noop :> Addx (-1) :> Nil)
-      out = InOut <$> fmap ShowWave inputSignal <*> fmap ShowWave (exposeClockResetEnable (mealy executeT (1, 1)) clk rst en inputSignal)
+      out = InOut <$> fmap ShowWave inputSignal <*> fmap ShowWave (exposeClockResetEnable (mealy executeT (1, 1, 20)) clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
 
 copyWavedrom1 :: IO ()
