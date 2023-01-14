@@ -5,6 +5,7 @@ module Aoc where
 import Clash.Cores.UART (uartRx, uartTx)
 import Clash.Explicit.Reset (convertReset)
 import Clash.Explicit.Testbench (outputVerifier', stimuliGenerator, tbClockGen)
+import Clash.Num.Saturating (Saturating)
 import Clash.Num.Wrapping (Wrapping)
 import Clash.Prelude (Bit, BitVector, Clock, DomainPeriod, Enable, HiddenClockResetEnable, Index, Reset, ResetPolarity (ActiveLow), SNat (SNat), Signal, Signed, System, Unsigned, bundle, createDomain, enableGen, exposeClockResetEnable, knownVDomain, mealy, register, replicate, resetGen, resize, vName, vPeriod, vResetPolarity)
 import Clash.Sized.Vector (Vec (Nil, (:>)), listToVecTH, (++))
@@ -84,27 +85,73 @@ sum6T (n, acc) next =
         then ((0, 0), Just acc')
         else ((n + 1, acc'), Nothing)
 
-runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Signed 32))
-runCore1 mBytes =
-  let mInsts = join <$> mealy (adapt parseT) StartOfLine mBytes
-      mInsts' = register Nothing mInsts
-      mSigStrengths = join <$> mealy (adapt executeT) (1, 1, 20) mInsts'
+spriteCollision :: Signed 32 -> Wrapping (Index 40) -> Bool
+spriteCollision x n =
+  let n' = fromIntegral n
+   in n' == x || n' - 1 == x || n' + 1 == x
+
+drawT :: Mealy (Signed 32, Wrapping (Index 40)) Inst (Bool, Maybe Bool)
+drawT (x, n) Noop =
+  ( (x, n + 1),
+    (spriteCollision x n, Nothing)
+  )
+drawT (x, n) (Addx offset) =
+  ( (x + resize offset, n + 2),
+    (spriteCollision x n, Just (spriteCollision x (n + 1)))
+  )
+
+collect240T ::
+  Mealy
+    (Saturating (Index 240), Vec 240 Bool)
+    (Bool, Maybe Bool)
+    (Maybe (Vec 240 Bool))
+collect240T (n, v) (x0, mx1) =
+  let (n', v') = case mx1 of
+        Just x1 -> (n + 2, fst $ Vector.shiftInAtN v (x0 :> x1 :> Nil))
+        Nothing -> (n + 1, fst $ Vector.shiftInAtN v (x0 :> Nil))
+   in ((n', v'), if n' == maxBound then Just v' else Nothing)
+
+data BcdOrControlOrCrt
+  = Boc BcdOrControl
+  | Crt Bool
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (NFData, NFDataX, ShowX)
+
+bcdOrControlOrCrtToAscii :: BcdOrControlOrCrt -> BitVector 8
+bcdOrControlOrCrtToAscii = \case
+  Boc b -> bcdOrControlToAscii b
+  Crt True -> 35
+  Crt False -> 32
+
+runCore1 :: HiddenClockResetEnable dom => Signal dom (Maybe Inst) -> Signal dom (Maybe (Signed 32))
+runCore1 mInsts =
+  let mSigStrengths = join <$> mealy (adapt executeT) (1, 1, 20) mInsts
       mSigStrengths' = register Nothing mSigStrengths
       out = join <$> mealy (adapt sum6T) (0, 0) mSigStrengths'
    in out
 
-runCore2 :: HiddenClockResetEnable dom => Signal dom () -> Signal dom (Maybe (Vec _ (Maybe BcdOrControl)))
-runCore2 =
-  pure (pure (pure Nil))
+bool240ToBcc :: Vec 240 Bool -> Vec 246 BcdOrControlOrCrt
+bool240ToBcc =
+  Vector.concatMap (\v' -> fmap Crt v' ++ (Boc Return :> Nil))
+    . Vector.unconcat (SNat :: SNat 40)
 
-runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec _ (Maybe BcdOrControl)))
+runCore2 :: HiddenClockResetEnable dom => Signal dom (Maybe Inst) -> Signal dom (Maybe (Vec 246 BcdOrControlOrCrt))
+runCore2 mInsts =
+  let pixels = register Nothing $ mealy (adapt drawT) (1, 0) mInsts
+      collected = join <$> mealy (adapt collect240T) (0, Vector.repeat False) pixels
+      out = fmap (fmap bool240ToBcc) collected
+   in out
+
+runCore :: HiddenClockResetEnable dom => Signal dom (Maybe (BitVector 8)) -> Signal dom (Maybe (Vec _ (Maybe BcdOrControlOrCrt)))
 runCore mBytes =
-  let part1 = register Nothing $ runCore1 mBytes
+  let mInsts = join <$> mealy (adapt parseT) StartOfLine mBytes
+      mInsts' = register Nothing mInsts
+      part1 = register Nothing $ runCore1 mInsts'
       part1Bcd = register Nothing $ bcd1SignedN part1
       part1BcdOrControl = register Nothing $ fmap (fmap (\(isNegative, bcds) -> (if isNegative then Just Negate else Nothing) :> blankLeadingZeros bcds)) part1Bcd
-      part2 = runCore2 (pure ())
+      part2 = runCore2 mInsts'
       texts = register Nothing $ mealy awaitBothT (Nothing, Nothing) (bundle (part1BcdOrControl, part2))
-      out = register Nothing $ fmap (fmap (\(a, b) -> a ++ (Just Return :> Nil) ++ b ++ (Just Return :> Just Eot :> Nil))) texts
+      out = register Nothing $ fmap (fmap (\(a, b) -> fmap (fmap Boc) a ++ (Just (Boc Return) :> Nil) ++ fmap Just b ++ (Just (Boc Eot) :> Nil))) texts
    in out
 
 run :: (HiddenClockResetEnable dom, DomainPeriod dom ~ 30000) => Signal dom Bit -> Signal dom Bit
@@ -112,11 +159,11 @@ run =
   fst
     . uartTx (SNat :: SNat 2083333)
     . register Nothing
-    . fmap (fmap bcdOrControlToAscii)
+    . fmap (fmap bcdOrControlOrCrtToAscii)
     . register Nothing
     . fmap join
     . register Nothing
-    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 14)) Nothing
+    . mealy (delayBufferVecT (SNat :: SNat 160) (SNat :: SNat 259)) Nothing
     . register Nothing
     . runCore
     . register Nothing
@@ -165,15 +212,6 @@ copyWavedromExecute =
       inputSignal = stimuliGenerator clk rst (Addx 15 :> Addx (-11) :> Addx 6 :> Addx (-3) :> Addx 5 :> Addx (-1) :> Addx (-8) :> Addx 13 :> Addx 4 :> Noop :> Addx (-1) :> Nil)
       out = InOut <$> fmap ShowWave inputSignal <*> fmap ShowWave (exposeClockResetEnable (mealy executeT (1, 1, 20)) clk rst en inputSignal)
    in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 75 "" out
-
-copyWavedrom1 :: IO ()
-copyWavedrom1 =
-  let en = enableGen
-      clk = tbClockGen (False <$ out)
-      rst = resetGen :: Reset System
-      inputSignal = stimuliGenerator clk rst (fmap (Just . fromIntegral . ord) $(listToVecTH "addx 15\naddx -11\naddx 6\naddx -3\naddx 5\naddx -1\naddx -8\naddx 13\naddx 4\nnoop\naddx -1\naddx 5\naddx -1\naddx 5\naddx -1\naddx 5\naddx -1\naddx 5\naddx -1\naddx -35\naddx 1\naddx 24\naddx -19\naddx 1\naddx 16\naddx -11\nnoop\nnoop\naddx 21\naddx -15\nnoop\nnoop\naddx -3\naddx 9\naddx 1\naddx -3\naddx 8\naddx 1\naddx 5\nnoop\nnoop\nnoop\nnoop\nnoop\naddx -36\nnoop\naddx 1\naddx 7\nnoop\nnoop\nnoop\naddx 2\naddx 6\nnoop\nnoop\nnoop\nnoop\nnoop\naddx 1\nnoop\nnoop\naddx 7\naddx 1\nnoop\naddx -13\naddx 13\naddx 7\nnoop\naddx 1\naddx -33\nnoop\nnoop\nnoop\naddx 2\nnoop\nnoop\nnoop\naddx 8\nnoop\naddx -1\naddx 2\naddx 1\nnoop\naddx 17\naddx -9\naddx 1\naddx 1\naddx -3\naddx 11\nnoop\nnoop\naddx 1\nnoop\naddx 1\nnoop\nnoop\naddx -13\naddx -19\naddx 1\naddx 3\naddx 26\naddx -30\naddx 12\naddx -1\naddx 3\naddx 1\nnoop\nnoop\nnoop\naddx -9\naddx 18\naddx 1\naddx 2\nnoop\nnoop\naddx 9\nnoop\nnoop\nnoop\naddx -1\naddx 2\naddx -37\naddx 1\naddx 3\nnoop\naddx 15\naddx -21\naddx 22\naddx -6\naddx 1\nnoop\naddx 2\naddx 1\nnoop\naddx -10\nnoop\nnoop\naddx 20\naddx 1\naddx 2\naddx 2\naddx -6\naddx -11\nnoop\nnoop\nnoop"))
-      out = InOut <$> fmap (ShowWave . maybe "" ((\x -> [x]) . Data.Char.chr . fromIntegral)) inputSignal <*> fmap ShowWave (exposeClockResetEnable runCore1 clk rst en inputSignal)
-   in setClipboard $ TL.unpack $ TLE.decodeUtf8 $ render $ wavedromWithClock 1000 "" out
 
 copyWavedrom :: IO ()
 copyWavedrom =
