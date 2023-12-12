@@ -15,7 +15,8 @@ stack run clash -- Aoc --verilog
 We'll copy all our verilog into the apio directory which lets us then do everything all at once (assuming the board is plugged in):
 
 ```
-cp ../verilog/Aoc.topEntity/*v && apio build -v && apio upload
+cd apio
+cp ../verilog/Aoc.topEntity/*v . && apio build -v && apio upload
 ```
 
 The `-v` can be omitted, but it's useful to see the statistics about our build printed, such as LC & RAM usage or max clock speed.
