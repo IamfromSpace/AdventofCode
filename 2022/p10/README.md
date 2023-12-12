@@ -1,10 +1,47 @@
 # Building
 
+## Permissions
+
+In order to program the Alchitry Cu, you'll need permissions to the correct USB device.
+To interact with it over the serial connection, you'll need permission to interact with the correct serial device.
+
+You can do this each time the device is plugged in by using `chmod`:
+
+```bash
+# Give all users read and write access to the FPGA's USB
+sudo chmod 666 /dev/bus/usb/${bus_number}/${device_number}
+
+# Give all users read and write access to the FPGA's virtual serial port over USB
+sudo chmod 666 /dev/ttyUSB${number}
+```
+
+However, these effects are purely temporary.
+You'll also need to locate the correct USB bus and device number (`lsusb` can help with this).
+
+To grant permanent access for USB, you can add a udev rule, so that when the Alchitry Cu is plugged in, it already has read and write access for all users.
+In NixOS, something like this would go in your configuration file:
+
+```nix
+  services.udev.extraRules = ''
+    # FT2232 onboard Alchitry Cu FPGA
+    ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", MODE="0666", ENV{ID_MM_DEVICE_IGNORE}="1", ENV{ID_MM_PORT_IGNORE}="1"
+    '';
+```
+
+In this example, broader permissions are set when the vendor and product id of the USB device match the Alchitry Cu's debug chip.
+
+For permanent access to the serial ports, you likely just want to add the user to the `dialout` group.
+In NixOS you can add "dialout" to `users.users.${you}.extraGroups` (a list of groups) or use `sudo usermod -a -G dialout $USERNAME` in other distros.
+
+## Dependencies
+
 Install `apio`:
 
 ```
 pip install -U apio
 ```
+
+## Build
 
 Compile our verilog:
 
