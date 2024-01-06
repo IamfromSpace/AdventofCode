@@ -62,10 +62,10 @@ delayBufferVecT ::
   KnownNat (CLog 2 (n + 1)) =>
   KnownNat (CLog 2 (m + 1)) =>
   KnownNat m =>
+  -- | How many clocks per output, 1 means no delay
   SNat (n + 1) ->
-  -- ^ How many clocks per output, 1 means no delay
+  -- | Vector length
   SNat (m + 1) ->
-  -- ^ Vector length
   Maybe (Unsigned (CLog 2 (n + 1)), Unsigned (CLog 2 (m + 1)), Vec (m + 1) a) ->
   Maybe (Vec (m + 1) a) ->
   (Maybe (Unsigned (CLog 2 (n + 1)), Unsigned (CLog 2 (m + 1)), Vec (m + 1) a), Maybe a)
