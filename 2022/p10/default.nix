@@ -69,8 +69,16 @@ let
         cp -r "verilog/" "$out/share/verilog"
       '';
     });
+
+  hardware-json =
+    pkgs.runCommand
+      "hardware.json"
+      { nativeBuildInputs = [ pkgs.yosys ]; }
+      "yosys -p \"synth_ice40 -json $out\" -q ${aoc-with-verilog}/share/verilog/Aoc.topEntity/*.v";
+
+  top-entity-pcf = pkgs.writeText "topEntity.pcf" (builtins.readFile ./apio/topEntity.pcf);
 in
   pkgs.runCommand
-    "hardware.json"
-    { nativeBuildInputs = [ pkgs.yosys ]; }
-    "yosys -p \"synth_ice40 -json $out\" -q ${aoc-with-verilog}/share/verilog/Aoc.topEntity/*.v"
+    "hardware.asc"
+    { nativeBuildInputs = [ pkgs.nextpnr ]; }
+    "nextpnr-ice40 --hx8k --package cb132 --json ${hardware-json} --asc $out --pcf ${top-entity-pcf} -q"
