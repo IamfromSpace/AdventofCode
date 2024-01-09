@@ -77,8 +77,14 @@ let
       "yosys -p \"synth_ice40 -json $out\" -q ${aoc-with-verilog}/share/verilog/Aoc.topEntity/*.v";
 
   top-entity-pcf = pkgs.writeText "topEntity.pcf" (builtins.readFile ./apio/topEntity.pcf);
+
+  hardware-asc =
+    pkgs.runCommand
+      "hardware.asc"
+      { nativeBuildInputs = [ pkgs.nextpnr ]; }
+      "nextpnr-ice40 --hx8k --package cb132 --json ${hardware-json} --asc $out --pcf ${top-entity-pcf} -q";
 in
   pkgs.runCommand
-    "hardware.asc"
-    { nativeBuildInputs = [ pkgs.nextpnr ]; }
-    "nextpnr-ice40 --hx8k --package cb132 --json ${hardware-json} --asc $out --pcf ${top-entity-pcf} -q"
+    "hardware.bin"
+    { nativeBuildInputs = [ pkgs.icestorm ]; }
+    "icepack ${hardware-asc} $out"
