@@ -53,17 +53,24 @@ let
         hashable = "1.4.2.0";
       };
     };
-in pkgs.haskell.lib.overrideCabal aoc (drv: {
-  enableLibraryProfiling = false;
 
-  postBuild = ''
-    dist/build/clash/clash \
-      Aoc --verilog \
-      -package-db dist/package.conf.inplace
-  '';
+  aoc-with-verilog =
+    pkgs.haskell.lib.overrideCabal aoc (drv: {
+      enableLibraryProfiling = false;
 
-  postInstall = ''
-    mkdir -p "$out/share"
-    cp -r "verilog/" "$out/share/verilog"
-  '';
-})
+      postBuild = ''
+        dist/build/clash/clash \
+          Aoc --verilog \
+          -package-db dist/package.conf.inplace
+      '';
+
+      postInstall = ''
+        mkdir -p "$out/share"
+        cp -r "verilog/" "$out/share/verilog"
+      '';
+    });
+in
+  pkgs.runCommand
+    "hardware.json"
+    { nativeBuildInputs = [ pkgs.yosys ]; }
+    "yosys -p \"synth_ice40 -json $out\" -q ${aoc-with-verilog}/share/verilog/Aoc.topEntity/*.v"
