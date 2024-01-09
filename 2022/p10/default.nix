@@ -53,5 +53,17 @@ let
         hashable = "1.4.2.0";
       };
     };
-in
-  aoc
+in pkgs.haskell.lib.overrideCabal aoc (drv: {
+  enableLibraryProfiling = false;
+
+  postBuild = ''
+    dist/build/clash/clash \
+      Aoc --verilog \
+      -package-db dist/package.conf.inplace
+  '';
+
+  postInstall = ''
+    mkdir -p "$out/share"
+    cp -r "verilog/" "$out/share/verilog"
+  '';
+})

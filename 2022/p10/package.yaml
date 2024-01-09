@@ -112,7 +112,6 @@ executables:
     main:                bin/Clash.hs
     source-dirs:         .
     ghc-options:
-    - -dynamic
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
@@ -124,7 +123,6 @@ executables:
     main:                bin/Clashi.hs
     source-dirs:         .
     ghc-options:
-    - -dynamic
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
