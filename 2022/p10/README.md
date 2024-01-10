@@ -35,41 +35,30 @@ In NixOS you can add "dialout" to `users.users.${you}.extraGroups` (a list of gr
 
 ## Dependencies
 
-Install `apio`:
+Install [nix](https://nixos.org/download).
+
+## Create the Binary
+
+All build steps to get the final FPGA binary are handled by nix, simply run `nix-build` from the root of the project.
+
+## Program the FPGA
+
+Note: You'll need to correctly configure your USB permissions for this to work.
+
+We use nix to run the command in an environment where our dependencies are already available.
 
 ```
-pip install -U apio
+nix-shell --run "iceprog result"
 ```
-
-## Build
-
-Compile our verilog:
-
-```
-stack run clash -- Aoc --verilog
-```
-
-We'll copy all our verilog into the apio directory which lets us then do everything all at once (assuming the board is plugged in):
-
-```
-cd apio
-cp ../verilog/Aoc.topEntity/*v . && apio build -v && apio upload
-```
-
-The `-v` can be omitted, but it's useful to see the statistics about our build printed, such as LC & RAM usage or max clock speed.
 
 # Interacting
 
-Install picocom:
-
-```
-sudo apt install picocom
-```
+Note: You'll need to correctly configure your serial permissions for this to work.
 
 To interactively send and receive data, start picocom like this:
 
 ```
-picocom -b ${BAUD_RATE} --omap crlf --imap lfcrlf ${SERIAL_DEVICE}
+nix-shell --run "picocom -b ${BAUD_RATE} --omap crlf --imap lfcrlf ${SERIAL_DEVICE}"
 ```
 
 Where for the Alchitry Cu, the typically device name is `/dev/ttyUSB0` or `/dev/ttyUSB1`.
@@ -80,7 +69,7 @@ In this mode, you can use Ctrl+D, you can send an EOT symbol.
 To send a file from stdin, use the following command:
 
 ```
-cat ${INPUT_FILE_NAME} | picocom -b ${BAUD_RATE} -qrx 1000 ${SERIAL_DEVICE}
+nix-shell --run "cat ${INPUT_FILE_NAME} | picocom -b ${BAUD_RATE} -qrx 1000 ${SERIAL_DEVICE}"
 ```
 
 This opens the channel for 1s (since picocom doesn't know when we're done) and then writes back to stdout (which can be piped elsewhere).
